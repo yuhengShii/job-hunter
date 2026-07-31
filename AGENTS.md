@@ -1,11 +1,11 @@
 # AGENTS.md
 
-51job 职位数据抓取与分析项目（前后端分离）。**PRD.md 是唯一权威需求文档**（数据模型、API、统计口径、抓取架构都在里面）；`PRD_backup.md` 是旧备份，不要改、不要参考。
+51job 职位数据抓取与分析项目（前后端分离）。**`docs/PRD.md` 是唯一权威需求文档**（数据模型、API、统计口径、抓取架构都在里面）；`PRD_backup.md` 是旧备份，不要改、不要参考。代码规范见 `docs/code-style.md`（已随会话自动加载）。
 
 ## 环境与工具
 
-- Windows + Python 3.14 + uv（`uv.lock` 已存在）。未配置 git 身份，提交时需带：`git -c user.name=yuhengshi -c user.email=yuhengshi@163.com commit ...`
-- `pyproject.toml` 目前只有 firecrawl，是**不完整的**：PRD 要求 fastapi、sqlalchemy、apscheduler、playwright 尚未添加，添加依赖用 `uv add`。
+- Windows + Python 3.14 + uv（`uv.lock` 已存在）。git 身份已配置（Euan <yuhengshi@foxmail.com>），直接 `git commit` 即可。
+- 依赖已齐：fastapi、sqlalchemy、apscheduler、playwright、firecrawl（v2 预留）。Playwright chromium 已装到 `%LOCALAPPDATA%\ms-playwright`，不再需要 `playwright install`。新增依赖用 `uv add`。
 - 前端完全没有脚手架（无 package.json），按 PRD 规划为 Vue3 + Vite + Element Plus + ECharts + Pinia + Vue Router。
 
 ## 目录约定
@@ -24,4 +24,4 @@
 
 ## 当前状态
 
-仓库处于起步阶段：仅目录骨架（.gitkeep），无业务代码。索引中尚有未提交的 `PRD.md`、`pyproject.toml`、`uv.lock`；`tt.py`、`job.xml`、`PRD_backup.md`、`.idea/` 未跟踪（`.idea/` 建议保持忽略）。
+仓库处于起步阶段：仅目录骨架（.gitkeep）+ 依赖，无业务代码。未提交改动：`PRD.md` 已 `git mv` 至 `docs/PRD.md`（已暂存）、`README.md`/`AGENTS.md` 有修改、`docs/code-style.md` 与 `opencode.json` 未跟踪（`opencode.json` 挂载 instructions，修改后需重启 opencode 生效）；`tt.py`、`job.xml`、`PRD_backup.md` 未跟踪（均建议不提交）。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。
