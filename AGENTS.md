@@ -24,4 +24,4 @@
 
 ## 当前状态
 
-仓库处于起步阶段：仅目录骨架（.gitkeep）+ 依赖，无业务代码。未提交改动：`PRD.md` 已 `git mv` 至 `docs/PRD.md`（已暂存）、`README.md`/`AGENTS.md` 有修改、`docs/code-style.md` 与 `opencode.json` 未跟踪（`opencode.json` 挂载 instructions，修改后需重启 opencode 生效）；`tt.py`、`job.xml`、`PRD_backup.md` 未跟踪（均建议不提交）。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。
+仓库处于起步阶段：仅目录骨架（.gitkeep）+ 依赖，无业务代码；全部改动已提交，工作区干净。`opencode.json` 挂载 instructions（AGENTS.md / docs/PRD.md / docs/code-style.md），修改后需重启 opencode 生效。`tt.py`、`job.xml`、`PRD_backup.md` 未跟踪（均建议不提交）。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。
