@@ -3,5 +3,9 @@ name = "job-hunter"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "apscheduler>=3.11.3",
+    "fastapi>=0.141.1",
     "firecrawl>=4.32.1",
+    "playwright>=1.61.0",
+    "sqlalchemy>=2.0.51",
 ]
