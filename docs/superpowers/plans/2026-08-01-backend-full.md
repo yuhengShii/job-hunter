@@ -2919,6 +2919,10 @@ def test_full_routes_registered(config):
     assert "/api/settings/schedule" in paths
 ```
 
+> 注：FastAPI 0.141.x 的 `app.routes` 含 `_IncludedRouter` 对象（无 `.path` 属性），路径集合需先展开——实现时以 flatten helper 适配（Task 14 裁定）。
+
+> 注：上述两个冒烟测试在旧 main.py 上也能通过（无真 RED）；另加崩溃恢复测试（queued/in_progress → failed + error_message）提供真正的 RED→GREEN（Task 14 裁定）。
+
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest backend/tests/test_app_smoke.py -v` — Expected: FAIL（lifespan 未实现）
@@ -2965,6 +2969,11 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # 测试模式不启动线程：TestClient 会触发 lifespan，
+        # worker 会与 409 互斥测试/崩溃恢复测试竞争（Task 14 裁定补丁）
+        if os.environ.get("JOB_HUNTER_TESTING"):
+            yield
+            return
         global _runner, _scheduler
         _runner = TaskRunner()
         _runner.start()
