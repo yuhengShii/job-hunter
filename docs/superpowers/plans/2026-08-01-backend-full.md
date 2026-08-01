@@ -1899,7 +1899,8 @@ def delete_task(task_id: int, db=Depends(get_db), user=Depends(get_current_user)
     task = db.get(ScrapeTask, task_id)
     if task is None:
         raise AppError("任务不存在", 404)
-    if task.status in _RUNNING:
+    # 只禁 in_progress：queued 可删（视为取消）——计划测试 test_list_and_delete_task 裁定
+    if task.status == TaskStatus.IN_PROGRESS.value:
         raise AppError("进行中的任务不能删除", 400)
     db.delete(task)
     db.commit()
