@@ -1,0 +1,61 @@
+import pytest
+from fastapi.testclient import TestClient
+
+from backend.app.api.deps import ensure_admin
+from backend.app.core.database import SessionLocal, init_db
+from backend.app.main import create_app
+from backend.app.models import ScrapeTask
+
+
+@pytest.fixture()
+def client(config):
+    init_db(config)
+    with SessionLocal() as s:
+        ensure_admin(s, config)
+        kw = __import__("backend.app.models", fromlist=["Keyword"]).Keyword(keyword="python")
+        s.add(kw)
+        s.commit()
+    app = create_app(config)
+    with TestClient(app) as c:
+        token = c.post("/api/auth/login", json={"username": config.auth_username, "password": config.auth_password}).json()["access_token"]
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        yield c
+
+
+def test_create_task(client):
+    resp = client.post("/api/tasks", json={"keyword_id": 1})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "queued"
+    assert data["mode"] == "playwright"
+
+
+def test_create_task_conflict_409(client):
+    assert client.post("/api/tasks", json={"keyword_id": 1}).status_code == 200
+    resp = client.post("/api/tasks", json={"keyword_id": 1})
+    assert resp.status_code == 409
+
+
+def test_create_task_max_pages_cap(client):
+    resp = client.post("/api/tasks", json={"keyword_id": 1, "max_pages": 9999})
+    assert resp.status_code == 400
+
+
+def test_list_and_delete_task(client):
+    client.post("/api/tasks", json={"keyword_id": 1})
+    tasks = client.get("/api/tasks").json()
+    assert len(tasks) == 1
+    tid = tasks[0]["id"]
+    resp = client.delete(f"/api/tasks/{tid}")
+    assert resp.status_code == 200
+    assert client.get("/api/tasks").json() == []
+
+
+def test_delete_running_task_400(client):
+    tid = client.post("/api/tasks", json={"keyword_id": 1}).json()["id"]
+    with SessionLocal() as s:
+        t = s.get(ScrapeTask, tid)
+        t.status = "in_progress"
+        s.commit()
+    resp = client.delete(f"/api/tasks/{tid}")
+    assert resp.status_code == 400

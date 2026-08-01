@@ -6,6 +6,7 @@ from backend.app.api.auth import auth_router
 from backend.app.api.deps import ensure_admin, set_current_config
 from backend.app.api.keywords import keywords_router
 from backend.app.api.settings import settings_router
+from backend.app.api.tasks import tasks_router
 from backend.app.core.config import REPO_ROOT, Config
 from backend.app.core.database import SessionLocal, init_db
 from backend.app.core.exceptions import AppError, app_error_handler
@@ -28,6 +29,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(keywords_router)
     app.include_router(settings_router)
+    app.include_router(tasks_router)
     return app
 
 
