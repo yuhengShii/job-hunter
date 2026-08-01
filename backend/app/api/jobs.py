@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
@@ -12,6 +13,7 @@ jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 def list_jobs(
     city: str | None = None,
     company_id: str | None = None,
+    keyword: str | None = None,
     tag: str | None = None,
     salary_min: int | None = None,
     salary_max: int | None = None,
@@ -25,6 +27,8 @@ def list_jobs(
         q = q.filter(Job.city == city)
     if company_id:
         q = q.filter(Job.company_id == company_id)
+    if keyword:
+        q = q.filter(or_(Job.title.contains(keyword), Job.area.contains(keyword)))
     if salary_min is not None:
         q = q.filter(Job.salary_min >= salary_min)
     if salary_max is not None:
