@@ -85,7 +85,7 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
 
 def parse_search_page(html: str, page_num: int) -> PageResult:
     if _is_verification(html):
-        return PageResult(page_num=page_num, jobs=[], failed=True)
+        return PageResult(page_num=page_num, jobs=[], failed=True, blocked=True)
     soup = BeautifulSoup(html, "html.parser")
     cards = soup.select(".joblist-item")
     if not cards:

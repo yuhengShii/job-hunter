@@ -15,6 +15,13 @@ logger = logging.getLogger("job_hunter")
 _SEARCH_URL = "https://we.51job.com/pc/search?keyword={kw}&searchType=2&sortType=0&pageNum={n}"
 _JOB_CARD_SELECTOR = ".joblist-item"
 _MAX_RETRIES = 3
+_LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
+_FINGERPRINT_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh']});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+window.chrome = window.chrome || {runtime: {}};
+"""
 
 
 class PlaywrightScraper(Scraper):
@@ -22,33 +29,73 @@ class PlaywrightScraper(Scraper):
         self._headful = headful
         self._playwright = None
         self._browser = None
+        self._context = None
 
     async def _ensure_browser(self):
         if self._browser:
             return
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=not self._headful)
+        self._browser = await self._playwright.chromium.launch(
+            headless=not self._headful, args=_LAUNCH_ARGS
+        )
 
     async def _new_page(self):
-        ua = random.choice(
-            [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            ]
-        )
-        page = await self._browser.new_page(user_agent=ua, viewport={"width": 1600, "height": 1000})
+        if self._context is None:
+            ua = random.choice(
+                [
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                ]
+            )
+            self._context = await self._browser.new_context(
+                user_agent=ua,
+                viewport={"width": 1600, "height": 1000},
+                locale="zh-CN",
+                timezone_id="Asia/Shanghai",
+                accept_language="zh-CN,zh;q=0.9",
+            )
+            await self._context.add_init_script(_FINGERPRINT_SCRIPT)
+        page = await self._context.new_page()
         return page
+
+    async def _degrade_to_headful(self) -> bool:
+        if self._headful:
+            return False
+        logger.warning("检测到反爬拦截，降级为有头模式")
+        await self.close()
+        self._headful = True
+        try:
+            await self._ensure_browser()
+        except Exception as exc:
+            logger.warning("有头模式重启失败: %s", exc)
+            return False
+        return True
 
     async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
+        consecutive_failures = 0
         for n in range(1, pages + 1):
             result = await self._fetch_page(keyword, n)
             if result.failed:
-                logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                if result.blocked:
+                    consecutive_failures = 0
+                    degraded = await self._degrade_to_headful()
+                else:
+                    consecutive_failures += 1
+                    degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
+                if degraded:
+                    result = await self._fetch_page(keyword, n)
+                if result.failed:
+                    logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                else:
+                    consecutive_failures = 0
+            else:
+                consecutive_failures = 0
             yield result
             await asyncio.sleep(random.uniform(2.0, 5.0))
 
     async def _fetch_page(self, keyword: str, page_num: int) -> PageResult:
+        await self._ensure_browser()
         last_result: PageResult | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
             page = await self._new_page()
@@ -61,6 +108,9 @@ class PlaywrightScraper(Scraper):
                     html = await page.content()
                     last_result = parse_search_page(html, page_num)
                     if last_result.failed:
+                        if last_result.blocked:
+                            # 命中 WAF 标记：不做无头重试，交 search 层立即降级
+                            return last_result
                         raise
                 if page_num == 1:
                     for _ in range(3):
@@ -99,6 +149,9 @@ class PlaywrightScraper(Scraper):
             await page.close()
 
     async def close(self) -> None:
+        if self._context:
+            await self._context.close()
+            self._context = None
         if self._browser:
             await self._browser.close()
             self._browser = None
