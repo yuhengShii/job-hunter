@@ -64,7 +64,11 @@ class PlaywrightScraper(Scraper):
         logger.warning("检测到反爬拦截，降级为有头模式")
         await self.close()
         self._headful = True
-        await self._ensure_browser()
+        try:
+            await self._ensure_browser()
+        except Exception as exc:
+            logger.warning("有头模式重启失败: %s", exc)
+            return False
         return True
 
     async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:

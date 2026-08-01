@@ -93,6 +93,8 @@ def test_consecutive_failures_degrade_to_headful(monkeypatch):
     assert len(launches) == 2
     assert launches[0]["headless"] is True
     assert launches[1]["headless"] is False
+    for launch in launches:
+        assert launch["args"] == ["--disable-blink-features=AutomationControlled"]
     assert not out[2].failed
 
 
@@ -176,7 +178,7 @@ def test_fetch_page_returns_early_on_blocked(monkeypatch):
             self.browser = browser
 
         async def add_init_script(self, script):
-            pass
+            self.browser.init_scripts.append(script)
 
         async def new_page(self):
             pages_created.append(1)
@@ -186,10 +188,14 @@ def test_fetch_page_returns_early_on_blocked(monkeypatch):
             pass
 
     class _FakeBrowser2:
+        def __init__(self):
+            self.init_scripts = []
+
         async def close(self):
             pass
 
         async def new_context(self, **kwargs):
+            self.context_kwargs = kwargs
             return _FakeContext(self)
 
     class _FakeChromium2:
@@ -213,3 +219,8 @@ def test_fetch_page_returns_early_on_blocked(monkeypatch):
     assert result.failed
     assert result.blocked
     assert len(pages_created) == 1   # blocked 页只尝试一次，不做无头重试
+    assert s._browser.context_kwargs["locale"] == "zh-CN"
+    assert s._browser.context_kwargs["timezone_id"] == "Asia/Shanghai"
+    assert s._browser.context_kwargs["accept_language"] == "zh-CN,zh;q=0.9"
+    assert len(s._browser.init_scripts) == 1
+    assert "webdriver" in s._browser.init_scripts[0]

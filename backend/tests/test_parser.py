@@ -59,6 +59,13 @@ def test_normal_page_not_blocked():
     assert result.blocked is False
 
 
+def test_empty_page_not_blocked():
+    html = "<html><body><div class='joblist'>无职位</div></body></html>"
+    result = parse_search_page(html, page_num=1)
+    assert result.failed is True
+    assert result.blocked is False
+
+
 def test_company_page_synthetic():
     comp = parse_company_page(COMPANY_HTML)
     assert comp is not None
