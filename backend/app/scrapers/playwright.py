@@ -52,7 +52,6 @@ class PlaywrightScraper(Scraper):
                 viewport={"width": 1600, "height": 1000},
                 locale="zh-CN",
                 timezone_id="Asia/Shanghai",
-                accept_language="zh-CN,zh;q=0.9",
             )
             await self._context.add_init_script(_FINGERPRINT_SCRIPT)
         page = await self._context.new_page()

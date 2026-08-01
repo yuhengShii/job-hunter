@@ -221,6 +221,6 @@ def test_fetch_page_returns_early_on_blocked(monkeypatch):
     assert len(pages_created) == 1   # blocked 页只尝试一次，不做无头重试
     assert s._browser.context_kwargs["locale"] == "zh-CN"
     assert s._browser.context_kwargs["timezone_id"] == "Asia/Shanghai"
-    assert s._browser.context_kwargs["accept_language"] == "zh-CN,zh;q=0.9"
+    assert "accept_language" not in s._browser.context_kwargs
     assert len(s._browser.init_scripts) == 1
     assert "webdriver" in s._browser.init_scripts[0]
