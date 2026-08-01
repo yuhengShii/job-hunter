@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -41,6 +42,7 @@ def upsert_jobs(db: Session, jobs: list[JobDraft]) -> int:
             existing.publish_time = j.publish_time
             existing.company_id = j.company_id
             existing.job_url = j.job_url
+            existing.updated_at = datetime.now()
         count += 1
     db.commit()
     return count

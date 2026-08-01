@@ -118,11 +118,15 @@ class TaskRunner:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            task = None
-            with SessionLocal() as db:
-                task = _claim_next_task(db)
-            if task:
-                logger.info("开始执行任务 task_id=%s", task.id)
-                asyncio.run(execute_task(task.id))
-            else:
-                self._stop.wait(_POLL_SECONDS)
+            try:
+                task = None
+                with SessionLocal() as db:
+                    task = _claim_next_task(db)
+                if task:
+                    logger.info("开始执行任务 task_id=%s", task.id)
+                    asyncio.run(execute_task(task.id))
+                else:
+                    self._stop.wait(_POLL_SECONDS)
+            except Exception:
+                logger.exception("任务执行循环异常")
+                continue
