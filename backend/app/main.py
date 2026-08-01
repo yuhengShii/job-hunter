@@ -3,7 +3,9 @@ import os
 from fastapi import FastAPI
 
 from backend.app.api.auth import auth_router
+from backend.app.api.companies import companies_router
 from backend.app.api.deps import ensure_admin, set_current_config
+from backend.app.api.jobs import jobs_router
 from backend.app.api.keywords import keywords_router
 from backend.app.api.settings import settings_router
 from backend.app.api.tasks import tasks_router
@@ -30,6 +32,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(keywords_router)
     app.include_router(settings_router)
     app.include_router(tasks_router)
+    app.include_router(jobs_router)
+    app.include_router(companies_router)
     return app
 
 
