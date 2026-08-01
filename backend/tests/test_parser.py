@@ -64,3 +64,21 @@ def test_company_page_synthetic():
 
 def test_company_page_verification_returns_none():
     assert parse_company_page("<html><body>安全验证</body></html>") is None
+
+
+def test_search_page_card_with_single_dc_cell():
+    html = """
+    <div class="joblist-item">
+      <div class="joblist-item-job"
+           sensorsdata='{"jobId":"1","jobTitle":"测试职位","jobSalary":"1-2万","jobArea":"上海·黄浦区","companyId":"999"}'>
+      </div>
+      <div class="bc"><div class="dc">计算机软件</div></div>
+    </div>
+    """
+    result = parse_search_page(html, page_num=1)
+    assert not result.failed
+    assert len(result.jobs) == 1
+    assert result.jobs[0].job_id == "1"
+    comp = result.companies[0]
+    assert comp.type is None
+    assert comp.size is None

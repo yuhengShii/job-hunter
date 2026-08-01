@@ -69,7 +69,10 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
     name = name_el.get_text(strip=True) if name_el else None
     dcs = [el for el in card.select(".bc .dc")]
     industry = dcs[0].get_text(strip=True) if len(dcs) > 0 else None
-    type_raw = dcs[1].get("title") or (dcs[1].get_text(strip=True) if len(dcs) > 1 else None)
+    if len(dcs) > 1:
+        type_raw = dcs[1].get("title") or dcs[1].get_text(strip=True)
+    else:
+        type_raw = None
     size = dcs[2].get_text(strip=True) if len(dcs) > 2 else None
     return CompanyDraft(
         company_id=company_id,
