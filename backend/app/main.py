@@ -8,6 +8,7 @@ from backend.app.api.deps import ensure_admin, set_current_config
 from backend.app.api.jobs import jobs_router
 from backend.app.api.keywords import keywords_router
 from backend.app.api.settings import settings_router
+from backend.app.api.stats import stats_router
 from backend.app.api.tasks import tasks_router
 from backend.app.core.config import REPO_ROOT, Config
 from backend.app.core.database import SessionLocal, init_db
@@ -34,6 +35,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(jobs_router)
     app.include_router(companies_router)
+    app.include_router(stats_router)
     return app
 
 
