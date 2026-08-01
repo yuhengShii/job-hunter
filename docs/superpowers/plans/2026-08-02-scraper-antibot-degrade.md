@@ -423,6 +423,7 @@ class PlaywrightScraper(Scraper):
             await asyncio.sleep(random.uniform(2.0, 5.0))
 
     async def _fetch_page(self, keyword: str, page_num: int) -> PageResult:
+        await self._ensure_browser()
         last_result: PageResult | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
             page = await self._new_page()
@@ -490,7 +491,9 @@ class PlaywrightScraper(Scraper):
 - [ ] **Step 4: 运行测试确认通过 + 全套回归**
 
 Run: `uv run pytest backend/tests/test_playwright_scraper.py -v` — Expected: PASS（4 个新测试 + 2 个既有接口测试）
-Run: `uv run pytest backend/tests -q` — Expected: 52 passed（46 既有 + Task 1 新增 2 + Task 2 新增 4），全部通过；site-packages starlette 弃用警告已知，忽略
+Run: `uv run pytest backend/tests -q` — Expected: 51 passed（46 既有 + Task 1 净增 1 + Task 2 新增 4），全部通过；site-packages starlette 弃用警告已知，忽略
+
+> 注：`_fetch_page` 起始的 `await self._ensure_browser()` 为 Task 2 裁定补充——测试直接调用 `_fetch_page` 需要浏览器就绪；该行幂等，与 `fetch_company` 既有模式一致。原计划 Step 4 的"52 passed"计数有误（Task 1 为改名+新增，净增 1），已修正为 51。
 
 - [ ] **Step 5: 提交**
 
