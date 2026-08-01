@@ -2438,6 +2438,12 @@ def test_filter_jobs(client):
     assert resp.json()["total"] == 1
     resp = client.get("/api/jobs", params={"company_id": "c1"})
     assert resp.json()["total"] == 3
+    resp = client.get("/api/jobs", params={"keyword": "工程师"})
+    assert resp.json()["total"] == 3
+    resp = client.get("/api/jobs", params={"keyword": "Python"})
+    assert resp.json()["total"] == 1
+    resp = client.get("/api/jobs", params={"keyword": "长宁"})
+    assert resp.json()["total"] == 1
 
 
 def test_get_job_detail(client):
@@ -2521,6 +2527,7 @@ class CompanyPage(BaseModel):
 `backend/app/api/jobs.py`：
 ```python
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
@@ -2534,6 +2541,7 @@ jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 def list_jobs(
     city: str | None = None,
     company_id: str | None = None,
+    keyword: str | None = None,
     tag: str | None = None,
     salary_min: int | None = None,
     salary_max: int | None = None,
@@ -2547,10 +2555,13 @@ def list_jobs(
         q = q.filter(Job.city == city)
     if company_id:
         q = q.filter(Job.company_id == company_id)
+    if keyword:
+        q = q.filter(or_(Job.title.contains(keyword), Job.area.contains(keyword)))
     if salary_min is not None:
-        q = q.filter(Job.salary_max >= salary_min)
+        # 底薪语义：salary_min 筛选下限（brief 原文列写反，已按自带测试修正）
+        q = q.filter(Job.salary_min >= salary_min)
     if salary_max is not None:
-        q = q.filter(Job.salary_min <= salary_max)
+        q = q.filter(Job.salary_max <= salary_max)
     items = q.order_by(Job.updated_at.desc()).all()
     if tag:
         items = [j for j in items if tag in (j.tags or [])]
