@@ -783,7 +783,8 @@ def test_search_page_parse_first_card():
 
 def test_search_page_company_from_card():
     result = parse_search_page(SEARCH_HTML, page_num=1)
-    assert len(result.companies) == 20
+    # fixture 实测 20 张卡片中 companyId 有 2 对重复（2543553、2274319 各 ×2），去重后 18 个唯一公司
+    assert len(result.companies) == 18
     comp = next(c for c in result.companies if c.company_id == "2543553")
     assert comp.name == "立信会计师事务所（特殊普通合伙）"
     assert comp.type == "民营"
@@ -804,6 +805,25 @@ def test_waf_page_marks_failed():
     result = parse_search_page(html, page_num=1)
     assert result.failed
     assert result.jobs == []
+
+
+def test_search_page_card_with_single_dc_cell():
+    html = """
+    <html><body>
+      <div class="joblist-item">
+        <div class="joblist-item-job" sensorsdata='{"jobId":"1","jobTitle":"缺类型职位","jobSalary":"1-2万","jobArea":"上海","companyId":"999"}'>
+        </div>
+        <div class="bc"><span class="dc">计算机软件</span></div>
+      </div>
+    </body></html>
+    """
+    result = parse_search_page(html, page_num=1)
+    assert not result.failed
+    assert len(result.jobs) == 1
+    assert result.jobs[0].job_id == "1"
+    comp = result.companies[0]
+    assert comp.type is None
+    assert comp.size is None
 
 
 def test_company_page_synthetic():
@@ -914,7 +934,8 @@ from backend.app.services.salary import parse_salary
 logger = logging.getLogger("job_hunter")
 
 _JOB_TIME_FMT = "%Y-%m-%d %H:%M:%S"
-_VERIFY_MARKERS = ("安全验证", "验证码", "renderData", "waf")
+# 注意：不能包含裸 "waf"——真实搜索页的压缩 JS 里存在 "waf" 子串（如 li1wafet），会误伤正常页面
+_VERIFY_MARKERS = ("安全验证", "验证码", "renderData")
 _TYPE_MAP = {
     "民营": "民营", "国企": "国企", "外企": "外企", "外资企业": "外企",
     "合资": "合资", "上市公司": "上市公司", "事业单位": "事业单位",
@@ -972,7 +993,10 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
     name = name_el.get_text(strip=True) if name_el else None
     dcs = [el for el in card.select(".bc .dc")]
     industry = dcs[0].get_text(strip=True) if len(dcs) > 0 else None
-    type_raw = dcs[1].get("title") or (dcs[1].get_text(strip=True) if len(dcs) > 1 else None)
+    if len(dcs) > 1:
+        type_raw = dcs[1].get("title") or dcs[1].get_text(strip=True)
+    else:
+        type_raw = None
     size = dcs[2].get_text(strip=True) if len(dcs) > 2 else None
     return CompanyDraft(
         company_id=company_id,
