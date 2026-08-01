@@ -45,11 +45,18 @@ def test_search_page_tags_fallback():
     assert tagged[0].tags == ["五险一金", "餐饮补贴", "带薪年假", "做五休二"]
 
 
-def test_waf_page_marks_failed():
+def test_waf_page_marks_blocked():
     html = '<html><body>安全验证页面</body></html>'
     result = parse_search_page(html, page_num=1)
     assert result.failed
+    assert result.blocked is True
     assert result.jobs == []
+
+
+def test_normal_page_not_blocked():
+    result = parse_search_page(SEARCH_HTML, page_num=1)
+    assert not result.failed
+    assert result.blocked is False
 
 
 def test_company_page_synthetic():

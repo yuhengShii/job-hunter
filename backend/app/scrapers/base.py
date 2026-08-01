@@ -38,6 +38,7 @@ class PageResult:
     companies: list[CompanyDraft] = field(default_factory=list)
     total_pages: int | None = None
     failed: bool = False
+    blocked: bool = False
 
 
 class Scraper(ABC):
