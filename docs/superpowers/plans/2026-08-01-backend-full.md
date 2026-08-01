@@ -2260,7 +2260,7 @@ git commit -m "feat: add storage upsert, task runner and crash recovery"
 `backend/tests/test_scheduler.py`：
 ```python
 from backend.app.core.database import SessionLocal, init_db
-from backend.app.models import Keyword, ScrapeTask, Setting
+from backend.app.models import Keyword, ScrapeTask
 from backend.app.services.scheduler import create_scheduled_tasks
 
 
@@ -2271,16 +2271,20 @@ def test_create_scheduled_tasks(config):
         k2 = Keyword(keyword="b")
         s.add_all([k1, k2])
         s.commit()
-        create_scheduled_tasks([k1.id, k2.id])
+        assert create_scheduled_tasks([k1.id, k2.id]) == 2
         assert s.query(ScrapeTask).count() == 2
-        create_scheduled_tasks([k1.id, k2.id])
-        assert s.query(ScrapeTask).count() == 4
+        # 已排队/进行中的 keyword 跳过——幂等（与 create_scheduled_tasks 实现一致）
+        assert create_scheduled_tasks([k1.id, k2.id]) == 0
+        assert s.query(ScrapeTask).count() == 2
         task = s.query(ScrapeTask).filter_by(keyword_id=k1.id).first()
         task.status = "in_progress"
         s.commit()
-        create_scheduled_tasks([k1.id])
-        assert s.query(ScrapeTask).count() == 5
+        assert create_scheduled_tasks([k1.id, k2.id]) == 1
+        assert s.query(ScrapeTask).count() == 3
+        assert s.query(ScrapeTask).filter_by(keyword_id=k2.id).count() == 2
 ```
+
+> 注：brief 原测试断言二次调用 count==4/5（允许对已排队 keyword 重复入队），与实现（跳过 queued+in_progress）自相矛盾——已按实现+文档语义修正测试（Task 11 裁定，与 Task 9 API 409 语义自洽）。
 
 - [ ] **Step 2: 运行测试确认失败**
 
