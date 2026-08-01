@@ -67,3 +67,18 @@ class SchedulerService:
             replace_existing=True,
         )
         logger.info("定时任务已启用 interval=%s 分钟 keywords=%s", minutes, keyword_ids)
+
+
+_active_service: SchedulerService | None = None
+
+
+def set_active_scheduler(service: SchedulerService | None) -> None:
+    """登记 lifespan 中的调度器实例，供 settings API 运行时重新应用配置。"""
+    global _active_service
+    _active_service = service
+
+
+def apply_active_schedule() -> None:
+    """settings 保存后调用：若服务已启动则热生效，未启动则下次 start 时生效。"""
+    if _active_service is not None:
+        _active_service.apply_schedule()

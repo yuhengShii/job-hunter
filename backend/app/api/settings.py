@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.models import Setting
 from backend.app.schemas.settings import ScheduleIn, ScheduleOut
+from backend.app.services.scheduler import apply_active_schedule
 
 settings_router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -26,4 +27,5 @@ def put_schedule(body: ScheduleIn, db=Depends(get_db), user=Depends(get_current_
     else:
         row.value = body.model_dump()
     db.commit()
+    apply_active_schedule()
     return body

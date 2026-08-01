@@ -15,7 +15,7 @@ from backend.app.core.config import REPO_ROOT, Config
 from backend.app.core.database import SessionLocal, init_db
 from backend.app.core.exceptions import AppError, app_error_handler
 from backend.app.core.logging import setup_logging
-from backend.app.services.scheduler import SchedulerService
+from backend.app.services.scheduler import SchedulerService, set_active_scheduler
 from backend.app.services.task_runner import TaskRunner, recover_interrupted_tasks
 
 _config: Config | None = None
@@ -42,8 +42,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             _runner = TaskRunner()
             _runner.start()
             _scheduler = SchedulerService()
+            set_active_scheduler(_scheduler)
             _scheduler.start()
         yield
+        set_active_scheduler(None)
         if _runner:
             _runner.stop()
         if _scheduler:

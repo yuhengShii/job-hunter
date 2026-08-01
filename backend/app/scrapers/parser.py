@@ -115,7 +115,7 @@ def parse_search_page(html: str, page_num: int) -> PageResult:
         if not tags_raw:
             tags = [t.get_text(strip=True) for t in card.select(".joblist-item-tags .tag")]
         else:
-            tags = [tags_raw]
+            tags = list(tags_raw) if isinstance(tags_raw, list) else [tags_raw]
         tags = [t for t in tags if t]
         publish_time = _parse_job_time(sdata.get("jobTime"))
         company_id = sdata.get("companyId")
