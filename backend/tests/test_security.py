@@ -17,17 +17,17 @@ def test_password_hash_roundtrip():
 
 
 def test_token_roundtrip():
-    token = create_access_token("admin", "secret-key")
-    assert decode_access_token(token, "secret-key") == "admin"
+    token = create_access_token("admin", "test-secret-key-0123456789abcdef")
+    assert decode_access_token(token, "test-secret-key-0123456789abcdef") == "admin"
 
 
 def test_token_bad_signature():
-    token = create_access_token("admin", "secret-key")
+    token = create_access_token("admin", "test-secret-key-0123456789abcdef")
     with pytest.raises(AppError):
-        decode_access_token(token, "other-key")
+        decode_access_token(token, "other-secret-key-0123456789abcdef")
 
 
 def test_token_expired():
-    token = create_access_token("admin", "secret-key", expires_hours=-1)
+    token = create_access_token("admin", "test-secret-key-0123456789abcdef", expires_hours=-1)
     with pytest.raises(AppError):
-        decode_access_token(token, "secret-key")
+        decode_access_token(token, "test-secret-key-0123456789abcdef")

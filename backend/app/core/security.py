@@ -37,7 +37,10 @@ def create_access_token(username: str, secret: str, expires_hours: int = 24) -> 
 def decode_access_token(token: str, secret: str) -> str:
     try:
         payload = jwt.decode(token, secret, algorithms=["HS256"])
-        return payload["sub"]
+        sub = payload.get("sub")
+        if not sub:
+            raise AppError("无效 token", 401)
+        return sub
     except jwt.ExpiredSignatureError:
         raise AppError("token 已过期", 401)
     except jwt.InvalidTokenError:
