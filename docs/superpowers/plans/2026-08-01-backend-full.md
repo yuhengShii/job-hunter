@@ -2012,6 +2012,7 @@ Run: `uv run pytest backend/tests/test_storage.py backend/tests/test_task_runner
 `backend/app/services/storage.py`：
 ```python
 import logging
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -2054,6 +2055,8 @@ def upsert_jobs(db: Session, jobs: list[JobDraft]) -> int:
             existing.publish_time = j.publish_time
             existing.company_id = j.company_id
             existing.job_url = j.job_url
+            # 值未变化时 ORM 不会标脏，onupdate 不触发；显式刷新以保证统计窗口
+            existing.updated_at = datetime.now()
         count += 1
     db.commit()
     return count
@@ -2214,14 +2217,18 @@ class TaskRunner:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            task = None
-            with SessionLocal() as db:
-                task = _claim_next_task(db)
-            if task:
-                logger.info("开始执行任务 task_id=%s", task.id)
-                asyncio.run(execute_task(task.id))
-            else:
-                self._stop.wait(_POLL_SECONDS)
+            try:
+                task = None
+                with SessionLocal() as db:
+                    task = _claim_next_task(db)
+                if task:
+                    logger.info("开始执行任务 task_id=%s", task.id)
+                    asyncio.run(execute_task(task.id))
+                else:
+                    self._stop.wait(_POLL_SECONDS)
+            except Exception:
+                # 任何未捕获异常都不能杀死守护线程，否则任务将永久卡在 in_progress
+                logger.exception("任务执行循环异常")
 ```
 
 - [ ] **Step 4: 运行测试确认通过**
