@@ -56,12 +56,27 @@ testpaths = ["backend/tests"]
 
 `backend/tests/conftest.py`：
 ```python
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+# 阻止 main.py 模块级 app=create_app() 在测试 import 时创建真实 data/config.ini
+os.environ["JOB_HUNTER_TESTING"] = "1"
+
+from backend.app.core.config import Config  # noqa: E402
+
+
+@pytest.fixture()
+def config(tmp_path):
+    return Config(
+        repo_root=tmp_path,
+        config_path=tmp_path / "config.ini",
+        db_path=tmp_path / "test.db",
+    )
 ```
 
 `backend/tests/test_config.py`：
@@ -648,6 +663,7 @@ def test_live_formats():
     assert parse_salary("1-2万") == (10000, 20000)
     assert parse_salary("1.2-1.9万") == (12000, 19000)
     assert parse_salary("8千-1万") == (8000, 10000)
+    assert parse_salary("8千-1.2万") == (8000, 12000)
     assert parse_salary("3-5万13薪") == (30000, 50000)
     assert parse_salary("1-2万/月·13薪") == (10000, 20000)
 
@@ -676,6 +692,7 @@ _PATTERNS: list[tuple[re.Pattern, int, bool]] = [
     (re.compile(r"^([\d.]+)-([\d.]+)千(?:/月)?"), 1000, False),
     (re.compile(r"^([\d.]+)-([\d.]+)\s*[Kk](?:/月)?"), 1000, False),
 ]
+_MIXED_KWAN_RE = re.compile(r"^([\d.]+)千-([\d.]+)万(?:/月)?")
 _SUFFIX_RE = re.compile(r"[\s·*]*\d+薪.*$")
 
 
@@ -686,6 +703,11 @@ def parse_salary(raw: str | None) -> tuple[int | None, int | None]:
     if text == "面议":
         return None, None
     text = _SUFFIX_RE.sub("", text).strip()
+    m = _MIXED_KWAN_RE.match(text)
+    if m:
+        lo, hi = float(m.group(1)), float(m.group(2))
+        if lo >= 1 and hi >= 1:
+            return int(lo * 1000), int(hi * 10000)
     for pat, unit, annual in _PATTERNS:
         m = pat.match(text)
         if m:
@@ -735,6 +757,7 @@ from backend.app.scrapers.parser import parse_company_page, parse_search_page
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SEARCH_HTML = (FIXTURES / "51job_search.html").read_text(encoding="utf-8")
+COMPANY_HTML = (FIXTURES / "51job_company.html").read_text(encoding="utf-8")
 
 
 def test_search_page_parse_first_card():
@@ -747,10 +770,10 @@ def test_search_page_parse_first_card():
     assert "Python" in job.title
     assert job.salary_raw == "1-2万"
     assert job.salary_min == 10000 and job.salary_max == 20000
-    assert job.city == "上海" and job.district == "长宁区"
-    assert job.area == "上海-长宁区"
+    assert job.city == "上海" and job.district == "黄浦区"
+    assert job.area == "上海·黄浦区"
     assert job.company_id == "2543553"
-    assert job.tags == []
+    assert job.tags == ["五险一金", "餐饮补贴", "带薪年假", "做五休二"]
     assert job.publish_time == datetime(2026, 4, 30, 16, 53, 19)
     assert job.job_url is None
 
@@ -759,17 +782,18 @@ def test_search_page_company_from_card():
     result = parse_search_page(SEARCH_HTML, page_num=1)
     assert len(result.companies) == 20
     comp = next(c for c in result.companies if c.company_id == "2543553")
-    assert comp.name == "上海伟申会师事务所（普通合伙）".strip() or comp.name
+    assert comp.name == "立信会计师事务所（特殊普通合伙）"
     assert comp.type == "民营"
-    assert "咨询" in comp.industry
+    assert comp.industry == "其他专业服务丨财务/审计/税务"
     assert comp.size == "5000-10000人"
 
 
 def test_search_page_tags_fallback():
     result = parse_search_page(SEARCH_HTML, page_num=1)
     tagged = [j for j in result.jobs if j.tags]
-    assert len(tagged) > 0
-    assert all(isinstance(t, str) for t in tagged[0].tags)
+    # fixture 实测 20 张卡片中第 17 张无 tags（jobLabel 与 DOM 均无），其余 19 张有
+    assert len(tagged) == 19
+    assert tagged[0].tags == ["五险一金", "餐饮补贴", "带薪年假", "做五休二"]
 
 
 def test_waf_page_marks_failed():
@@ -780,20 +804,7 @@ def test_waf_page_marks_failed():
 
 
 def test_company_page_synthetic():
-    html = """
-    <html><body>
-      <div class="company-info">
-        <h1>示例科技</h1>
-        <div class="com_detail1">
-          <div class="t1">公司类型</div><div class="t2">民营</div>
-          <div class="t1">所属行业</div><div class="t2">计算机软件</div>
-          <div class="t1">公司规模</div><div class="t2">500-1000人</div>
-          <div class="t1">活跃天数</div><div class="t2">30天</div>
-        </div>
-      </div>
-    </body></html>
-    """
-    comp = parse_company_page(html)
+    comp = parse_company_page(COMPANY_HTML)
     assert comp is not None
     assert comp.name == "示例科技"
     assert comp.type == "民营"
@@ -810,11 +821,27 @@ def test_company_page_verification_returns_none():
 
 Run: `uv run pytest backend/tests/test_parser.py -v` — Expected: FAIL（模块不存在）
 
-- [ ] **Step 3: 实现 base.py 与 parser.py**
+- [ ] **Step 3: 创建合成公司 fixture，实现 base.py 与 parser.py**
+
+`backend/tests/fixtures/51job_company.html`（合成，模拟 51job 公司详情页结构）：
+```html
+<html><body>
+  <div class="company-info">
+    <h1>示例科技</h1>
+    <div class="com_detail1">
+      <div class="t1">公司类型</div><div class="t2">民营</div>
+      <div class="t1">所属行业</div><div class="t2">计算机软件</div>
+      <div class="t1">公司规模</div><div class="t2">500-1000人</div>
+      <div class="t1">活跃天数</div><div class="t2">30天</div>
+    </div>
+  </div>
+</body></html>
+```
 
 `backend/app/scrapers/base.py`：
 ```python
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -857,7 +884,7 @@ class PageResult:
 
 class Scraper(ABC):
     @abstractmethod
-    async def search(self, keyword: str, pages: int):
+    async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:
         ...
 
     @abstractmethod
@@ -901,6 +928,9 @@ def _split_area(area: str) -> tuple[str | None, str | None]:
         return None, None
     if "-" in area:
         city, district = area.split("-", 1)
+        return city.strip(), district.strip() or None
+    if "·" in area:
+        city, district = area.split("·", 1)
         return city.strip(), district.strip() or None
     return area.strip(), None
 
@@ -1066,15 +1096,16 @@ git commit -m "feat: add search/company page parsers with sensorsdata priority"
 `backend/tests/test_playwright_scraper.py`：
 ```python
 import inspect
+from collections.abc import AsyncGenerator
 
-from backend.app.scrapers.base import Scraper
+from backend.app.scrapers.base import PageResult, Scraper
 from backend.app.scrapers.playwright import PlaywrightScraper
 
 
 def test_playwright_scraper_implements_interface():
     assert issubclass(PlaywrightScraper, Scraper)
     sig = inspect.signature(PlaywrightScraper.search)
-    assert sig.return_annotation == "AsyncGenerator[PageResult, None]" or True
+    assert sig.return_annotation == AsyncGenerator[PageResult, None]
 
 
 def test_scraper_is_async_generator():
@@ -1095,6 +1126,7 @@ Run: `uv run pytest backend/tests/test_playwright_scraper.py -v` — Expected: F
 import asyncio
 import logging
 import random
+from collections.abc import AsyncGenerator
 from urllib.parse import quote
 
 from playwright.async_api import TimeoutError as PWTimeoutError
@@ -1132,7 +1164,7 @@ class PlaywrightScraper(Scraper):
         page = await self._browser.new_page(user_agent=ua, viewport={"width": 1600, "height": 1000})
         return page
 
-    async def search(self, keyword: str, pages: int):
+    async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
         for n in range(1, pages + 1):
             result = await self._fetch_page(keyword, n)
@@ -1385,6 +1417,8 @@ def me(user=Depends(get_current_user)):
 
 `backend/app/main.py`（本任务最小骨架，后续任务扩充）：
 ```python
+import os
+
 from fastapi import FastAPI
 
 from backend.app.api.auth import auth_router
@@ -1412,7 +1446,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+# 测试通过 conftest 设置 JOB_HUNTER_TESTING=1，避免污染真实 data/
+if not os.environ.get("JOB_HUNTER_TESTING"):
+    app = create_app()
 ```
 
 - [ ] **Step 4: 运行测试确认通过**
@@ -2841,6 +2877,7 @@ Run: `uv run pytest backend/tests/test_app_smoke.py -v` — Expected: FAIL（lif
 
 `backend/app/main.py`（重写）：
 ```python
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -2896,7 +2933,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+# 测试通过 conftest 设置 JOB_HUNTER_TESTING=1，避免污染真实 data/
+if not os.environ.get("JOB_HUNTER_TESTING"):
+    app = create_app()
 ```
 
 注：`recover_interrupted_tasks()` 在 `create_app` 内调用（非 lifespan），确保测试直接 `create_app(config)` 也生效；worker/scheduler 在 lifespan 内启动。
