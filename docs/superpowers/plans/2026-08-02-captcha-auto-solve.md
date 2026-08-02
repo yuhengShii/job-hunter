@@ -350,7 +350,7 @@ async def solve_aliyun_captcha(page: Page, max_attempts: int = 3) -> bool:
             if await err.count() > 0:
                 logger.warning("滑块验证失败 (attempt %s)", attempt)
             await page.wait_for_timeout(random.uniform(1000, 2000))
-        return False
+    return False
         except Exception as exc:
             logger.warning("滑块验证异常 (attempt %s): %s", attempt, exc)
             return False
