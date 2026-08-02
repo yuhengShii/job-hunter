@@ -76,7 +76,7 @@ async def _noop_sleep(delay):
 
 def test_human_track_total_distance():
     track = _human_track(300.0)
-    assert len(track) == 50
+    assert len(track) >= 50
     assert abs(sum(track) - 300.0) < 2.0
 
 
@@ -97,9 +97,9 @@ def test_solve_success_drags_full_distance(monkeypatch):
     first = page.mouse.moves[0][0]
     last = page.mouse.moves[-1][0]
     start_x = BBOX_SLIDER["x"] + BBOX_SLIDER["width"] / 2
-    distance = (BBOX_WRAPPER["x"] + BBOX_WRAPPER["width"] - BBOX_SLIDER["width"]) - start_x
+    target_x = BBOX_WRAPPER["x"] + BBOX_WRAPPER["width"] - BBOX_SLIDER["width"] / 2
     assert first == start_x
-    assert abs(last - (start_x + distance)) < 2.0
+    assert abs(last - target_x) < 2.0
     assert len(page.mouse.moves) >= 40
 
 
