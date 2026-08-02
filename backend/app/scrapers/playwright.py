@@ -8,6 +8,7 @@ from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
 from backend.app.scrapers.base import CompanyDraft, PageResult, Scraper
+from backend.app.scrapers.captcha import solve_aliyun_captcha
 from backend.app.scrapers.parser import parse_company_page, parse_search_page
 
 logger = logging.getLogger("job_hunter")
@@ -15,6 +16,7 @@ logger = logging.getLogger("job_hunter")
 _SEARCH_URL = "https://we.51job.com/pc/search?keyword={kw}&searchType=2&sortType=0&pageNum={n}"
 _JOB_CARD_SELECTOR = ".joblist-item"
 _MAX_RETRIES = 3
+_CAPTCHA_COOLDOWN = 90
 _LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 _FINGERPRINT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
@@ -52,7 +54,6 @@ class PlaywrightScraper(Scraper):
                 viewport={"width": 1600, "height": 1000},
                 locale="zh-CN",
                 timezone_id="Asia/Shanghai",
-                accept_language="zh-CN,zh;q=0.9",
             )
             await self._context.add_init_script(_FINGERPRINT_SCRIPT)
         page = await self._context.new_page()
@@ -74,25 +75,48 @@ class PlaywrightScraper(Scraper):
     async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
         consecutive_failures = 0
+        consecutive_captcha = 0
         for n in range(1, pages + 1):
             result = await self._fetch_page(keyword, n)
             if result.failed:
-                if result.blocked:
+                if result.captcha:
+                    consecutive_failures = 0
+                    logger.warning("滑块验证未通过，冷却 %s 秒后重试: page=%s", _CAPTCHA_COOLDOWN, n)
+                    await asyncio.sleep(_CAPTCHA_COOLDOWN)
+                    result = await self._fetch_page(keyword, n)
+                    if result.failed:
+                        consecutive_captcha += 1
+                        logger.warning("第 %s 页抓取失败（冷却重试仍失败）: keyword=%s", n, keyword)
+                        if consecutive_captcha >= 3:
+                            logger.warning("连续 %s 页验证码未通过，放弃剩余页", consecutive_captcha)
+                            return
+                    else:
+                        consecutive_captcha = 0
+                elif result.blocked:
+                    consecutive_captcha = 0
                     consecutive_failures = 0
                     degraded = await self._degrade_to_headful()
+                    if degraded:
+                        result = await self._fetch_page(keyword, n)
+                    if result.failed:
+                        logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                    else:
+                        consecutive_failures = 0
                 else:
+                    consecutive_captcha = 0
                     consecutive_failures += 1
                     degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
-                if degraded:
-                    result = await self._fetch_page(keyword, n)
-                if result.failed:
-                    logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
-                else:
-                    consecutive_failures = 0
+                    if degraded:
+                        result = await self._fetch_page(keyword, n)
+                    if result.failed:
+                        logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                    else:
+                        consecutive_failures = 0
             else:
+                consecutive_captcha = 0
                 consecutive_failures = 0
             yield result
-            await asyncio.sleep(random.uniform(2.0, 5.0))
+            await asyncio.sleep(random.uniform(3.0, 8.0))
 
     async def _fetch_page(self, keyword: str, page_num: int) -> PageResult:
         await self._ensure_browser()
@@ -108,8 +132,14 @@ class PlaywrightScraper(Scraper):
                     html = await page.content()
                     last_result = parse_search_page(html, page_num)
                     if last_result.failed:
+                        if last_result.captcha:
+                            if await solve_aliyun_captcha(page):
+                                await page.wait_for_selector(_JOB_CARD_SELECTOR, timeout=30000)
+                                html = await page.content()
+                                last_result = parse_search_page(html, page_num)
+                                return last_result
+                            return last_result
                         if last_result.blocked:
-                            # 命中 WAF 标记：不做无头重试，交 search 层立即降级
                             return last_result
                         raise
                 if page_num == 1:

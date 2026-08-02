@@ -45,6 +45,20 @@ def test_search_page_tags_fallback():
     assert tagged[0].tags == ["五险一金", "餐饮补贴", "带薪年假", "做五休二"]
 
 
+def test_captcha_page_marks_captcha():
+    html = '<html><body><div id="aliyunCaptcha-window-embed" class="aliyunCaptcha-show">请按住滑块，拖动到最右边</div></body></html>'
+    result = parse_search_page(html, page_num=1)
+    assert result.failed is True
+    assert result.captcha is True
+    assert result.blocked is False
+
+
+def test_normal_page_not_captcha():
+    result = parse_search_page(SEARCH_HTML, page_num=1)
+    assert not result.failed
+    assert result.captcha is False
+
+
 def test_waf_page_marks_blocked():
     html = '<html><body>安全验证页面</body></html>'
     result = parse_search_page(html, page_num=1)

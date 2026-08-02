@@ -6,6 +6,7 @@
 
 - Windows + Python 3.14 + uv（`uv.lock` 已提交）。git 身份已配置（Euan <yuhengshi@foxmail.com>），直接 `git commit` 即可。
 - 依赖已装：fastapi、sqlalchemy、apscheduler、playwright、firecrawl（v2 预留）。Playwright chromium 已装到 `%LOCALAPPDATA%\ms-playwright`，勿再 `playwright install`。新增依赖用 `uv add`。
+- **Windows 编码**：中文系统终端默认 GBK，Python stdout 与 PowerShell 管道均按 GBK 编码，显示端按 UTF-8 解码会乱码。规则：凡执行涉及中文输出的命令（读日志、`uv run python -c` 打印等），一律在命令前设 `$env:PYTHONUTF8 = "1"`；启动服务同理（见 `docs/code-style.md`）。日志文件本身是 UTF-8（`logging.py` 已指定），乱码只发生在终端传输环节。
 - 前端完全没有脚手架（无 package.json），按 PRD 规划为 Vue3 + Vite + Element Plus + ECharts + Pinia + Vue Router。
 
 ## 目录约定

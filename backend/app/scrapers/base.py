@@ -39,6 +39,7 @@ class PageResult:
     total_pages: int | None = None
     failed: bool = False
     blocked: bool = False
+    captcha: bool = False
 
 
 class Scraper(ABC):
