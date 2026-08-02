@@ -389,6 +389,7 @@ git commit -m "feat: add aliyunCaptcha slider auto-solve with human track"
 **行为契约（评审以此为准）：**
 - `_fetch_page` 超时路径：解析出 `captcha=True` → 调 `await solve_aliyun_captcha(page)` → 成功 → 重新 `wait_for_selector(_JOB_CARD_SELECTOR, timeout=30000)` 解析返回；失败 → `return` 该 captcha 结果（不重试）
 - `search()`：`captcha=True` 失败页 → `consecutive_failures = 0` → `logger.warning("滑块验证未通过，冷却 90 秒后重试: page=%s", n)` → `await asyncio.sleep(90)` → 重试该页一次 → 仍失败仅记 warning（**不再进入** captcha 冷却分支，防死循环）
+- **连续 captcha 上限（终审裁定）**：`search()` 维护 `consecutive_captcha` 计数（captcha 页 +1，成功页重置）；连续 3 页未解 → 记 warning「连续 N 页验证码未通过，放弃剩余页」并提前结束任务——实测 23 页连续 captcha 场景下无上限会让任务空转数小时（PRD §8 不纠缠）
 - 降频：`random.uniform(2.0, 5.0)` → `random.uniform(3.0, 8.0)`
 - blocked/连续失败降级逻辑不变
 
