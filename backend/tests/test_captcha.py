@@ -9,10 +9,11 @@ BBOX_WRAPPER = {"x": 10.0, "y": 95.0, "width": 300.0, "height": 40.0}
 
 
 class FakeMouse:
-    def __init__(self):
+    def __init__(self, on_up=None):
         self.moves = []
         self.downs = 0
         self.ups = 0
+        self._on_up = on_up
 
     async def move(self, x, y):
         self.moves.append((x, y))
@@ -22,6 +23,8 @@ class FakeMouse:
 
     async def up(self):
         self.ups += 1
+        if self._on_up:
+            await self._on_up()
 
 
 class FakeLocator:
@@ -46,9 +49,9 @@ class FakeLocator:
 
 
 class FakePage:
-    def __init__(self, specs):
+    def __init__(self, specs, on_up=None):
         self._specs = specs
-        self.mouse = FakeMouse()
+        self.mouse = FakeMouse(on_up=on_up)
         self.waits = []
 
     def locator(self, sel):
@@ -79,7 +82,13 @@ def test_human_track_total_distance():
 
 def test_solve_success_drags_full_distance(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
-    page = FakePage(_specs())
+    embed = FakeLocator(1, None, "aliyunCaptcha-show")
+
+    async def _on_up():
+        embed._attr = "aliyunCaptcha-hidden"  # 拖动后验证通过（class 变化）
+
+    page = FakePage(_specs(embed_attr="aliyunCaptcha-show"), on_up=_on_up)
+    page._specs["#aliyunCaptcha-window-embed"] = embed
     async def run():
         return await solve_aliyun_captcha(page)
     assert asyncio.run(run()) is True

@@ -73,13 +73,9 @@ async def solve_aliyun_captcha(page: Page, max_attempts: int = 3) -> bool:
                 logger.info("滑块验证通过 (attempt %s)", attempt)
                 return True
             err = page.locator(_ERROR_SELECTOR)
-            if await err.count() > 0 and (await err.first.inner_text()).strip():
+            if await err.count() > 0:
                 logger.warning("滑块验证失败 (attempt %s)", attempt)
-                await page.wait_for_timeout(random.uniform(1000, 2000))
-                continue
-            # 无错误提示且未判定失败：视为通过（阿里云通过后 errorCode 无文本）
-            logger.info("滑块验证通过 (attempt %s)", attempt)
-            return True
+            await page.wait_for_timeout(random.uniform(1000, 2000))
         except Exception as exc:
             logger.warning("滑块验证异常 (attempt %s): %s", attempt, exc)
             return False
