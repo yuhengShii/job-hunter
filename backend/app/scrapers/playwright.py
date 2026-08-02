@@ -75,6 +75,7 @@ class PlaywrightScraper(Scraper):
     async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
         consecutive_failures = 0
+        consecutive_captcha = 0
         for n in range(1, pages + 1):
             result = await self._fetch_page(keyword, n)
             if result.failed:
@@ -84,8 +85,15 @@ class PlaywrightScraper(Scraper):
                     await asyncio.sleep(_CAPTCHA_COOLDOWN)
                     result = await self._fetch_page(keyword, n)
                     if result.failed:
+                        consecutive_captcha += 1
                         logger.warning("第 %s 页抓取失败（冷却重试仍失败）: keyword=%s", n, keyword)
+                        if consecutive_captcha >= 3:
+                            logger.warning("连续 %s 页验证码未通过，放弃剩余页", consecutive_captcha)
+                            return
+                    else:
+                        consecutive_captcha = 0
                 elif result.blocked:
+                    consecutive_captcha = 0
                     consecutive_failures = 0
                     degraded = await self._degrade_to_headful()
                     if degraded:
@@ -95,6 +103,7 @@ class PlaywrightScraper(Scraper):
                     else:
                         consecutive_failures = 0
                 else:
+                    consecutive_captcha = 0
                     consecutive_failures += 1
                     degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
                     if degraded:
@@ -104,6 +113,7 @@ class PlaywrightScraper(Scraper):
                     else:
                         consecutive_failures = 0
             else:
+                consecutive_captcha = 0
                 consecutive_failures = 0
             yield result
             await asyncio.sleep(random.uniform(3.0, 8.0))

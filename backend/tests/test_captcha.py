@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 from backend.app.scrapers.captcha import _human_track, solve_aliyun_captcha
 
 BBOX_SLIDER = {"x": 20.0, "y": 100.0, "width": 40.0, "height": 30.0}

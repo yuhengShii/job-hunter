@@ -374,3 +374,50 @@ def test_search_captcha_solved_after_cooldown_continues(monkeypatch):
     assert sleeps[0] == 90
     assert not out[0].failed and not out[1].failed
     assert len(launches) == 1
+
+
+def test_search_aborts_after_three_consecutive_captcha_pages(monkeypatch):
+    sleeps = []
+
+    async def _recording_sleep(delay):
+        sleeps.append(delay)
+
+    launches = []
+    _setup(monkeypatch, launches)
+    monkeypatch.setattr(asyncio, "sleep", _recording_sleep)
+    s = PlaywrightScraper(headful=False)
+    fetched = []
+
+    def _counting_fetch(seq):
+        async def fetch(keyword, n):
+            fetched.append(n)
+            return next(seq)
+
+        return fetch
+
+    monkeypatch.setattr(
+        s,
+        "_fetch_page",
+        _counting_fetch(
+            iter(
+                [
+                    PageResult(page_num=1, jobs=[], failed=True, captcha=True),
+                    PageResult(page_num=1, jobs=[], failed=True, captcha=True),
+                    PageResult(page_num=2, jobs=[], failed=True, captcha=True),
+                    PageResult(page_num=2, jobs=[], failed=True, captcha=True),
+                    PageResult(page_num=3, jobs=[], failed=True, captcha=True),
+                    PageResult(page_num=3, jobs=[], failed=True, captcha=True),
+                ]
+            )
+        ),
+    )
+
+    async def run():
+        return [r async for r in s.search("python", 5)]
+
+    out = asyncio.run(run())
+    assert sleeps[0] == sleeps[2] == sleeps[4] == 90   # 每页冷却 90s，连续 3 页
+    assert len(sleeps) == 5                            # 第 3 页冷却后直接放弃，无页间延时
+    assert [r.page_num for r in out] == [1, 2]         # 第 3 页结果不产出，任务提前结束
+    assert len(fetched) == 6                           # 无第 4 页抓取（seq 恰好耗尽）
+    assert len(launches) == 1                          # 未触发 headful 降级
