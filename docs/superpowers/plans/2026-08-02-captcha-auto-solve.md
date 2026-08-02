@@ -408,7 +408,7 @@ def test_fetch_page_solves_captcha_then_returns_list(monkeypatch):
         async def content(self):
             if self.times == 1:
                 return '<html><body><div id="aliyunCaptcha-window-embed" class="aliyunCaptcha-show">请按住滑块</div></body></html>'
-            return "<html><body><div class='joblist-item'>x</div></body></html>"
+            return '<html><body><div class="joblist-item"><div class="joblist-item-job" sensorsdata=\'{"jobId":"1","jobTitle":"t","jobSalary":"1-2万","jobArea":"上海·黄浦区","companyId":"999"}\'></div></div></body></html>'
 
         async def close(self):
             pass
@@ -473,9 +473,9 @@ def test_search_captcha_page_cooldowns_then_retries(monkeypatch):
     async def _recording_sleep(delay):
         sleeps.append(delay)
 
-    monkeypatch.setattr(asyncio, "sleep", _recording_sleep)
     launches = []
     _setup(monkeypatch, launches)
+    monkeypatch.setattr(asyncio, "sleep", _recording_sleep)
     s = PlaywrightScraper(headful=False)
     monkeypatch.setattr(
         s,
@@ -507,9 +507,9 @@ def test_search_captcha_solved_after_cooldown_continues(monkeypatch):
     async def _recording_sleep(delay):
         sleeps.append(delay)
 
-    monkeypatch.setattr(asyncio, "sleep", _recording_sleep)
     launches = []
     _setup(monkeypatch, launches)
+    monkeypatch.setattr(asyncio, "sleep", _recording_sleep)
     s = PlaywrightScraper(headful=False)
     monkeypatch.setattr(
         s,
@@ -566,6 +566,7 @@ b) `_fetch_page` 超时路径（现有代码在 `except PWTimeoutError:` 内）�
                     if last_result.failed:
                         if last_result.captcha:
                             if await solve_aliyun_captcha(page):
+                                await page.wait_for_selector(_JOB_CARD_SELECTOR, timeout=30000)
                                 html = await page.content()
                                 last_result = parse_search_page(html, page_num)
                                 return last_result
@@ -594,6 +595,12 @@ c) `search()` 冷却分支与降频（在 `if result.failed:` 开头插入 captc
                 elif result.blocked:
                     consecutive_failures = 0
                     degraded = await self._degrade_to_headful()
+                    if degraded:
+                        result = await self._fetch_page(keyword, n)
+                    if result.failed:
+                        logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                    else:
+                        consecutive_failures = 0
                 else:
                     consecutive_failures += 1
                     degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
@@ -609,7 +616,7 @@ c) `search()` 冷却分支与降频（在 `if result.failed:` 开头插入 captc
             await asyncio.sleep(random.uniform(3.0, 8.0))
 ```
 
-> 注：原 blocked 分支（立即降级 + 重试）结构保持不变，仅与 captcha 分支并列；captcha 分支重试后的结果若仍 failed 只记日志（不再冷却、不再降级）。
+> 注：brief 原代码块 blocked 分支漏了降级后重试（`if degraded: result = ...` 被误放入 else 分支），导致既有 `test_blocked_page_triggers_immediate_degrade` 回归——已按契约"blocked 分支（立即降级 + 重试）结构保持不变"恢复（Task 3 裁定）。
 
 - [ ] **Step 4: 运行测试确认通过 + 全套回归**
 
