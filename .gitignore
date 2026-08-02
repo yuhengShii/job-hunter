@@ -222,3 +222,7 @@ data/*
 !data/.gitkeep
 logs/*
 !logs/.gitkeep
+
+# Frontend (Vue/Vite)
+node_modules/
+frontend/dist/
