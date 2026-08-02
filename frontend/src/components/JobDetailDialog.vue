@@ -46,7 +46,6 @@ const companyName = computed(() => {
 
 async function loadCompanies() {
   if (loaded) return
-  loaded = true
   try {
     let page = 1
     const map = new Map<string, string>()
@@ -57,6 +56,7 @@ async function loadCompanies() {
       page += 1
     }
     companyMap.value = map
+    loaded = true
   } catch {
     // 公司名获取失败时降级显示 company_id
   }
