@@ -295,7 +295,11 @@ onMounted(async () => {
   }
   pollTimer = window.setInterval(async () => {
     if (tasks.value.some((t) => t.status === 'in_progress' || t.status === 'queued')) {
-      await loadTasks()
+      try {
+        await loadTasks()
+      } catch {
+        // 拦截器已提示
+      }
     }
   }, 3000)
 })
