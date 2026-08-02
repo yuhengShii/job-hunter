@@ -140,10 +140,11 @@ BBOX_WRAPPER = {"x": 10.0, "y": 95.0, "width": 300.0, "height": 40.0}
 
 
 class FakeMouse:
-    def __init__(self):
+    def __init__(self, on_up=None):
         self.moves = []
         self.downs = 0
         self.ups = 0
+        self._on_up = on_up
 
     async def move(self, x, y):
         self.moves.append((x, y))
@@ -153,6 +154,8 @@ class FakeMouse:
 
     async def up(self):
         self.ups += 1
+        if self._on_up:
+            await self._on_up()
 
 
 class FakeLocator:
@@ -177,9 +180,9 @@ class FakeLocator:
 
 
 class FakePage:
-    def __init__(self, specs):
+    def __init__(self, specs, on_up=None):
         self._specs = specs
-        self.mouse = FakeMouse()
+        self.mouse = FakeMouse(on_up=on_up)
         self.waits = []
 
     def locator(self, sel):
@@ -210,7 +213,13 @@ def test_human_track_total_distance():
 
 def test_solve_success_drags_full_distance(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
-    page = FakePage(_specs())
+    embed = FakeLocator(1, None, "aliyunCaptcha-show")
+
+    async def _on_up():
+        embed._attr = "aliyunCaptcha-hidden"  # 拖动后验证通过（class 变化）
+
+    page = FakePage(_specs(embed_attr="aliyunCaptcha-show"), on_up=_on_up)
+    page._specs["#aliyunCaptcha-window-embed"] = embed
     async def run():
         return await solve_aliyun_captcha(page)
     assert asyncio.run(run()) is True
@@ -338,13 +347,10 @@ async def solve_aliyun_captcha(page: Page, max_attempts: int = 3) -> bool:
                 logger.info("滑块验证通过 (attempt %s)", attempt)
                 return True
             err = page.locator(_ERROR_SELECTOR)
-            if await err.count() > 0 and (await err.first.inner_text()).strip():
+            if await err.count() > 0:
                 logger.warning("滑块验证失败 (attempt %s)", attempt)
-                await page.wait_for_timeout(random.uniform(1000, 2000))
-                continue
-            # 无错误提示且未判定失败：视为通过（阿里云通过后 errorCode 无文本）
-            logger.info("滑块验证通过 (attempt %s)", attempt)
-            return True
+            await page.wait_for_timeout(random.uniform(1000, 2000))
+        return False
         except Exception as exc:
             logger.warning("滑块验证异常 (attempt %s): %s", attempt, exc)
             return False
@@ -354,6 +360,8 @@ async def solve_aliyun_captcha(page: Page, max_attempts: int = 3) -> bool:
 > 注：`_is_passed` 在拖动**前**先查一次——容器已非显示态（如复用页）时不无谓拖动（Task 2 裁定）。
 >
 > 注：Task 2 裁定修复两处 plan 缺陷——(1) `_human_track` 返回每步**位移增量**，move 循环必须以 `pos += dx` 累积（原 `start_x + dx` 把增量当绝对坐标，指针停在起点附近，真实拖动必失败）；(2) 拖动后判定改为"class 通过 或 无错误提示文本即通过"（阿里云失败时 errorCode 必有文本；静态 fake 无法模拟 class 变化，原判定在测试中不可达）。实现者已 10 次复跑验证无 RNG 抖动。
+>
+> 注：Task 4 实测裁定推翻上述 (2) 的宽松判定——真实 51job 上拖动失败时 errorCode **不保证有文本**，导致每页 solve 均假阳性返回 True 而列表从不出现。修复：**只认 class 判定**（`_is_passed`：容器消失或 class 不含 `aliyunCaptcha-show`），errorCode 仅记日志，失败一律重试至 max_attempts 后返回 False。
 
 - [ ] **Step 4: 运行测试确认通过**
 
