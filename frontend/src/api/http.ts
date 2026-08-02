@@ -22,12 +22,12 @@ http.interceptors.response.use(
       window.location.assign('/login')
       return Promise.reject(error)
     }
-    const detail = error.response?.data?.detail
-    const msg = typeof detail === 'string' && detail ? detail : '请求失败'
-    if (!error.response && !error.config?.url?.includes('/auth/login')) {
+    if (!error.response) {
       ElMessage.error('无法连接服务器')
       return Promise.reject(error)
     }
+    const detail = error.response?.data?.detail
+    const msg = typeof detail === 'string' && detail ? detail : '请求失败'
     ElMessage.error(msg)
     return Promise.reject(error)
   },

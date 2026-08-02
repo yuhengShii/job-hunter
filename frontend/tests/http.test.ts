@@ -91,4 +91,15 @@ describe('响应拦截器', () => {
     await expect(http.get('/x')).rejects.toBeTruthy()
     expect(ElMessage.error).toHaveBeenCalledWith('无法连接服务器')
   })
+
+  it('登录请求网络错误也显示无法连接', async () => {
+    rejectAdapter(
+      new axios.AxiosError('Network Error', 'ERR_NETWORK', {
+        headers: {},
+        url: '/auth/login',
+      } as never),
+    )
+    await expect(http.post('/auth/login', {})).rejects.toBeTruthy()
+    expect(ElMessage.error).toHaveBeenCalledWith('无法连接服务器')
+  })
 })

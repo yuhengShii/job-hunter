@@ -151,7 +151,10 @@ useChart(sizeEl, sizeOption)
 useChart(trendEl, trendOption)
 useChart(tagsEl, tagsOption)
 
+let statsSeq = 0
+
 async function reload() {
+  const seq = ++statsSeq
   const kw = keywordId.value
   const [ov, sa, co, tr, ta] = await Promise.all([
     statsApi.overview(kw),
@@ -160,6 +163,7 @@ async function reload() {
     statsApi.trend(kw, 30),
     statsApi.tags(kw, 10),
   ])
+  if (seq !== statsSeq) return
   overview.value = ov
   salary.value = sa
   company.value = co
@@ -168,7 +172,10 @@ async function reload() {
 }
 
 async function loadSalary() {
-  salary.value = await statsApi.salary(keywordId.value, groupBy.value)
+  const seq = ++statsSeq
+  const sa = await statsApi.salary(keywordId.value, groupBy.value)
+  if (seq !== statsSeq) return
+  salary.value = sa
 }
 
 onMounted(async () => {
