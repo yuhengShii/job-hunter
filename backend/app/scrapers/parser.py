@@ -12,6 +12,7 @@ logger = logging.getLogger("job_hunter")
 
 _JOB_TIME_FMT = "%Y-%m-%d %H:%M:%S"
 _VERIFY_MARKERS = ("安全验证", "验证码", "renderData")
+_CAPTCHA_MARKERS = ("aliyunCaptcha", "请按住滑块")
 _TYPE_MAP = {
     "民营": "民营", "国企": "国企", "外企": "外企", "外资企业": "外企",
     "合资": "合资", "上市公司": "上市公司", "事业单位": "事业单位",
@@ -21,6 +22,10 @@ _TYPE_MAP = {
 
 def _is_verification(html: str) -> bool:
     return any(m in html for m in _VERIFY_MARKERS)
+
+
+def _is_captcha(html: str) -> bool:
+    return any(m in html for m in _CAPTCHA_MARKERS)
 
 
 def _split_area(area: str) -> tuple[str | None, str | None]:
@@ -84,6 +89,8 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
 
 
 def parse_search_page(html: str, page_num: int) -> PageResult:
+    if _is_captcha(html):
+        return PageResult(page_num=page_num, jobs=[], failed=True, captcha=True)
     if _is_verification(html):
         return PageResult(page_num=page_num, jobs=[], failed=True, blocked=True)
     soup = BeautifulSoup(html, "html.parser")
