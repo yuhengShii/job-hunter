@@ -1,3 +1,3 @@
 <template>
-  <div>Job Hunter</div>
+  <router-view />
 </template>
