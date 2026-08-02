@@ -7,12 +7,12 @@
 - Windows + Python 3.14 + uv（`uv.lock` 已提交）。git 身份已配置（Euan <yuhengshi@foxmail.com>），直接 `git commit` 即可。
 - 依赖已装：fastapi、sqlalchemy、apscheduler、playwright、firecrawl（v2 预留）。Playwright chromium 已装到 `%LOCALAPPDATA%\ms-playwright`，勿再 `playwright install`。新增依赖用 `uv add`。
 - **Windows 编码**：中文系统终端默认 GBK，Python stdout 与 PowerShell 管道均按 GBK 编码，显示端按 UTF-8 解码会乱码。规则：凡执行涉及中文输出的命令（读日志、`uv run python -c` 打印等），一律在命令前设 `$env:PYTHONUTF8 = "1"`；启动服务同理（见 `docs/code-style.md`）。日志文件本身是 UTF-8（`logging.py` 已指定），乱码只发生在终端传输环节。
-- 前端完全没有脚手架（无 package.json），按 PRD 规划为 Vue3 + Vite + Element Plus + ECharts + Pinia + Vue Router。
+- 前端见 `frontend/`（Vue3 + Vite + TS，npm scripts：dev/build/type-check/test；dev proxy /api → 127.0.0.1:8000；生产构建产物由后端静态托管）。
 
 ## 目录约定
 
 - 后端代码在 `backend/app/` 包内：`api/`（路由，只做校验与响应组装）、`core/`（配置/JWT/日志）、`models/`（SQLAlchemy）、`schemas/`（Pydantic，禁止在路由中暴露 ORM 对象）、`scrapers/`（Scraper 抽象 + Playwright v1 + Firecrawl v2 预留）、`services/`（薪资解析/统计/APScheduler）。
-- 测试在 `backend/tests/`，本地 HTML fixture 放 `backend/tests/fixtures/`（pytest，计划中未实现；测试禁止访问真实 51job）。
+- 测试在 `backend/tests/`，本地 HTML fixture 放 `backend/tests/fixtures/`（pytest，63 项全绿；测试禁止访问真实 51job）。
 - SQLite 数据库放 `data/`，日志放 `logs/`（均已被 gitignore，仅保留 `.gitkeep`）。
 
 ## 必须遵循的 PRD 规则（实现时）
@@ -25,4 +25,4 @@
 
 ## 当前状态
 
-仓库处于起步阶段：仅目录骨架（.gitkeep）+ 依赖，无业务代码；全部改动已提交，工作区干净。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。
+后端 v1 已实现（数据模型 / 认证 / 任务调度 / 抓取引擎 / API / 统计，pytest 全绿）；前端 v1 已实现（5 个页面，vitest + type-check + build 通过，手动冒烟通过）。生产模式由后端单端口托管 `frontend/dist`（`uv run uvicorn backend.app.main:app`）。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。

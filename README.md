@@ -11,7 +11,7 @@
 | 后端 | Python 3.14 + FastAPI + SQLAlchemy + APScheduler + Playwright |
 | 抓取 | v1 Playwright（无头浏览器）；v2 预留 Firecrawl（同一 Scraper 接口） |
 | 数据库 | SQLite 单文件（`data/`） |
-| 前端 | Vue3 + Vite + Element Plus + ECharts + Pinia + Vue Router（规划中） |
+| 前端 | Vue3 + Vite + Element Plus + ECharts + Pinia + Vue Router |
 | 认证 | 单用户，用户名+密码，JWT |
 
 ## 功能
@@ -33,7 +33,7 @@ backend/app/        FastAPI 后端包
   scrapers/         Scraper 抽象 + Playwright v1 + Firecrawl v2 预留
   services/         薪资解析、统计聚合、任务调度
 backend/tests/      pytest 测试（fixtures/ 放本地 HTML 样例）
-frontend/           Vue3 前端（尚未搭建）
+frontend/            Vue3 前端（src/views、src/stores、src/api、src/components）
 data/               SQLite 数据库
 logs/               日志
 ```
@@ -47,17 +47,25 @@ uv run playwright install chromium                 # 安装浏览器
 
 # 运行后端（main.py 实现后可用）
 uv run uvicorn backend.app.main:app --reload
+
+# 前端（Node 24+）
+cd frontend && npm install
+npm run dev          # 开发：http://localhost:5173（proxy /api → 127.0.0.1:8000）
+
+# 生产：构建后由后端单端口托管
+npm run build        # 产出 frontend/dist，直接访问 http://127.0.0.1:8000
 ```
 
 ## 开发
 
 - 依赖管理用 `uv`（`uv add <pkg>`）
 - 测试：`uv run pytest backend/tests`
+- 前端（frontend/）：`npm run test`（vitest）、`npm run type-check`
 - 后端约定见 [AGENTS.md](AGENTS.md)
 
 ## 状态
 
 - [x] 依赖安装、目录骨架
-- [ ] 后端：数据模型 / 认证 / 任务调度 / 抓取引擎 / API / 统计
-- [ ] 前端：Vue3 脚手架与页面
-- [ ] 测试：解析（HTML fixture）、API、薪资解析、统计聚合
+- [x] 后端：数据模型 / 认证 / 任务调度 / 抓取引擎 / API / 统计
+- [x] 前端：Vue3 脚手架与页面
+- [ ] 测试：解析（HTML fixture）、API、薪资解析、统计聚合、前端 vitest

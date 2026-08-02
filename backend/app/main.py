@@ -2,6 +2,8 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.auth import auth_router
 from backend.app.api.companies import companies_router
@@ -17,6 +19,8 @@ from backend.app.core.exceptions import AppError, app_error_handler
 from backend.app.core.logging import setup_logging
 from backend.app.services.scheduler import SchedulerService, set_active_scheduler
 from backend.app.services.task_runner import TaskRunner, recover_interrupted_tasks
+
+FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
 
 _config: Config | None = None
 _runner: TaskRunner | None = None
@@ -55,6 +59,19 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.add_exception_handler(AppError, app_error_handler)
     for router in (auth_router, keywords_router, tasks_router, jobs_router, companies_router, stats_router, settings_router):
         app.include_router(router)
+
+    if not os.environ.get("JOB_HUNTER_TESTING") and FRONTEND_DIST.is_dir():
+        assets_dir = FRONTEND_DIST / "assets"
+        if assets_dir.is_dir():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def spa_fallback(full_path: str) -> FileResponse:
+            target = (FRONTEND_DIST / full_path).resolve()
+            if full_path and target.is_file() and target.is_relative_to(FRONTEND_DIST.resolve()):
+                return FileResponse(target)
+            return FileResponse(FRONTEND_DIST / "index.html")
+
     return app
 
 
