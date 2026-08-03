@@ -11,6 +11,9 @@
           </template>
           <el-table :data="keywordsStore.list" v-loading="keywordsStore.loading">
             <el-table-column prop="keyword" label="关键字" min-width="140" />
+            <el-table-column label="地区" width="90">
+              <template #default="{ row }">{{ cityName(row.city) }}</template>
+            </el-table-column>
             <el-table-column label="启用" width="80">
               <template #default="{ row }">
                 <el-switch :model-value="row.enabled" @change="toggle(row)" />
@@ -34,7 +37,7 @@
           <el-form inline>
             <el-form-item label="关键字">
               <el-select v-model="taskForm.keyword_id" placeholder="选择关键字" style="width: 200px">
-                <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="kw.keyword" :value="kw.id" />
+                <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="`${kw.keyword} · ${cityName(kw.city)}`" :value="kw.id" />
               </el-select>
             </el-form-item>
             <el-form-item label="方式">
@@ -105,7 +108,7 @@
                 placeholder="选择要定时抓取的关键字"
                 @change="saveSchedule"
               >
-                <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="kw.keyword" :value="kw.id" />
+                <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="`${kw.keyword} · ${cityName(kw.city)}`" :value="kw.id" />
               </el-select>
             </el-form-item>
           </el-form>
@@ -117,6 +120,11 @@
       <el-form label-width="80px">
         <el-form-item label="关键字">
           <el-input v-model="keywordDialog.keyword" />
+        </el-form-item>
+        <el-form-item label="地区">
+          <el-select v-model="keywordDialog.city" style="width: 100%">
+            <el-option v-for="c in CITY_OPTIONS" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="抓取方式">
           <el-select v-model="keywordDialog.scrape_mode" style="width: 100%">
@@ -139,6 +147,7 @@ import { keywordsApi, type KeywordOut } from '@/api/keywords'
 import { tasksApi, type TaskOut } from '@/api/tasks'
 import { settingsApi, type ScheduleOut } from '@/api/settings'
 import { useKeywordsStore } from '@/stores/keywords'
+import { CITY_OPTIONS, cityName } from '@/utils/cities'
 import { formatTime, taskStatusText, taskStatusType } from '@/utils/format'
 
 const keywordsStore = useKeywordsStore()
@@ -158,6 +167,7 @@ const keywordDialog = reactive({
   editing: false,
   id: 0,
   keyword: '',
+  city: '000000',
   scrape_mode: 'playwright',
 })
 
@@ -233,6 +243,7 @@ function openCreate() {
   keywordDialog.editing = false
   keywordDialog.id = 0
   keywordDialog.keyword = ''
+  keywordDialog.city = '000000'
   keywordDialog.scrape_mode = 'playwright'
   keywordDialog.visible = true
 }
@@ -241,6 +252,7 @@ function openEdit(row: KeywordOut) {
   keywordDialog.editing = true
   keywordDialog.id = row.id
   keywordDialog.keyword = row.keyword
+  keywordDialog.city = row.city
   keywordDialog.scrape_mode = row.scrape_mode
   keywordDialog.visible = true
 }
@@ -253,9 +265,17 @@ async function saveKeyword() {
   }
   try {
     if (keywordDialog.editing) {
-      await keywordsApi.update(keywordDialog.id, { keyword: kw, scrape_mode: keywordDialog.scrape_mode })
+      await keywordsApi.update(keywordDialog.id, {
+        keyword: kw,
+        city: keywordDialog.city,
+        scrape_mode: keywordDialog.scrape_mode,
+      })
     } else {
-      await keywordsApi.create({ keyword: kw, scrape_mode: keywordDialog.scrape_mode })
+      await keywordsApi.create({
+        keyword: kw,
+        city: keywordDialog.city,
+        scrape_mode: keywordDialog.scrape_mode,
+      })
     }
     keywordDialog.visible = false
     await keywordsStore.fetch()

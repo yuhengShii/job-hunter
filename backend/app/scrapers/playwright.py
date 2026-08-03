@@ -13,7 +13,9 @@ from backend.app.scrapers.parser import parse_company_page, parse_search_page
 
 logger = logging.getLogger("job_hunter")
 
-_SEARCH_URL = "https://we.51job.com/pc/search?keyword={kw}&searchType=2&sortType=0&pageNum={n}"
+_SEARCH_URL = (
+    "https://we.51job.com/pc/search?keyword={kw}&searchType=2&sortType=0&pageNum={n}&jobArea={area}"
+)
 _JOB_CARD_SELECTOR = ".joblist-item"
 _MAX_RETRIES = 3
 _CAPTCHA_COOLDOWN = 90
@@ -72,18 +74,20 @@ class PlaywrightScraper(Scraper):
             return False
         return True
 
-    async def search(self, keyword: str, pages: int) -> AsyncGenerator[PageResult, None]:
+    async def search(
+        self, keyword: str, pages: int, area: str = "000000"
+    ) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
         consecutive_failures = 0
         consecutive_captcha = 0
         for n in range(1, pages + 1):
-            result = await self._fetch_page(keyword, n)
+            result = await self._fetch_page(keyword, n, area)
             if result.failed:
                 if result.captcha:
                     consecutive_failures = 0
                     logger.warning("滑块验证未通过，冷却 %s 秒后重试: page=%s", _CAPTCHA_COOLDOWN, n)
                     await asyncio.sleep(_CAPTCHA_COOLDOWN)
-                    result = await self._fetch_page(keyword, n)
+                    result = await self._fetch_page(keyword, n, area)
                     if result.failed:
                         consecutive_captcha += 1
                         logger.warning("第 %s 页抓取失败（冷却重试仍失败）: keyword=%s", n, keyword)
@@ -97,7 +101,7 @@ class PlaywrightScraper(Scraper):
                     consecutive_failures = 0
                     degraded = await self._degrade_to_headful()
                     if degraded:
-                        result = await self._fetch_page(keyword, n)
+                        result = await self._fetch_page(keyword, n, area)
                     if result.failed:
                         logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
                     else:
@@ -107,7 +111,7 @@ class PlaywrightScraper(Scraper):
                     consecutive_failures += 1
                     degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
                     if degraded:
-                        result = await self._fetch_page(keyword, n)
+                        result = await self._fetch_page(keyword, n, area)
                     if result.failed:
                         logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
                     else:
@@ -118,13 +122,13 @@ class PlaywrightScraper(Scraper):
             yield result
             await asyncio.sleep(random.uniform(3.0, 8.0))
 
-    async def _fetch_page(self, keyword: str, page_num: int) -> PageResult:
+    async def _fetch_page(self, keyword: str, page_num: int, area: str = "000000") -> PageResult:
         await self._ensure_browser()
         last_result: PageResult | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
             page = await self._new_page()
             try:
-                url = _SEARCH_URL.format(kw=quote(keyword), n=page_num)
+                url = _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 try:
                     await page.wait_for_selector(_JOB_CARD_SELECTOR, timeout=30000)

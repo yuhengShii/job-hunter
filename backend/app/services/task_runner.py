@@ -53,13 +53,14 @@ async def execute_task(task_id: int) -> None:
         task = db.get(ScrapeTask, task_id)
         keyword = db.get(Keyword, task.keyword_id)
         kw_text = keyword.keyword if keyword else ""
+        kw_area = keyword.city if keyword else "000000"
     # PRD scrape_tasks 无 max_pages 列，per-task 值仅校验不落库，执行统一用全局上限
     cfg = Config(repo_root=REPO_ROOT)
     max_pages = cfg.max_pages
     scraper = PlaywrightScraper(headful=cfg.headful)
     try:
         first_page = True
-        async for result in scraper.search(kw_text, max_pages):
+        async for result in scraper.search(kw_text, max_pages, area=kw_area):
             with SessionLocal() as db:
                 task = db.get(ScrapeTask, task_id)
                 if result.failed:

@@ -33,15 +33,16 @@
 ## 4. 数据模型（SQLite）
 
 - **users**：id, username, password_hash, created_at
-- **keywords**：id, keyword(唯一), enabled, scrape_mode(默认抓取方式), last_scraped_at, created_at
+- **keywords**：id, keyword, city(51job 城市编码，000000=全国), enabled, scrape_mode(默认抓取方式), last_scraped_at, created_at —— **(keyword, city) 联合唯一**，同一岗位词可分别抓不同城市
 - **scrape_tasks**：id, keyword_id, mode, status(排队/进行中/成功/失败/部分成功), total_pages, total_found, success_count, failed_count, last_page(已抓到的最大页号), start_time, end_time, error_message, created_at
 - **jobs**（job_id 唯一，覆盖更新）：id, job_id, title, salary_raw, salary_min, salary_max, city, district, area, tags(JSON), publish_time, source, company_id, job_url, created_at, updated_at
 - **companies**（company_id 唯一）：id, company_id, name, type(民营/国企/外企), industry, size, activity, website, created_at, updated_at
 - **settings**：id, key(唯一), value(JSON), updated_at —— 存全局配置（如 schedule：频率、启停、目标关键字）
 
-索引与类型：job_id、company_id、keyword、settings.key 建唯一索引；keyword_id、created_at 建普通索引；publish_time、start_time、end_time、created_at、updated_at 均存 datetime。
+索引与类型：job_id、company_id、(keyword, city)、settings.key 建唯一索引；keyword_id、created_at 建普通索引；publish_time、start_time、end_time、created_at、updated_at 均存 datetime。
 
 说明：
+- city 使用 51job 6 位城市编码（如 010000 北京 / 020000 上海 / 030200 广州 / 040000 深圳 / 080200 杭州 / 170200 郑州），000000 表示全国；前端维护编码表，后端仅存编码。
 - salary_raw 解析为 salary_min/max，规则枚举：`8千-1.2万`→8000/12000、`1.5-2万/月`→15000/20000、`15-20K`→15000/20000、`年薪20-30万`→按年折算、`面议`→NULL（统计时跳过），无法解析的格式记入 error 日志并置 NULL。
 - tags：优先取 sensorsdata 的 jobLabel，为空时走 DOM 兜底，仍无则存空数组。
 - 公司详情字段（类型/行业/人数/活跃度）从 51job 公司信息处抓取，缺失时复用已抓取的同 company_id 信息。
@@ -55,7 +56,8 @@
 除 `POST /api/auth/login` 外，所有接口均需携带 JWT（`Authorization: Bearer`）。
 
 - 认证：`POST /api/auth/login`、`GET /api/auth/me`
-- 关键字：`GET/POST /api/keywords`、`PUT/DELETE /api/keywords/{id}`、`POST /api/keywords/{id}/toggle`
+- 关键字：`GET/POST /api/keywords`（POST 支持 `keyword`、`city`，缺省 000000）、`PUT/DELETE /api/keywords/{id}`、`POST /api/keywords/{id}/toggle`
+  - 唯一性：同 keyword 不同 city 可共存；同 keyword 同 city 返回 409
 - 任务：`POST /api/tasks`、`GET /api/tasks`、`GET /api/tasks/{id}`、`DELETE /api/tasks/{id}`
   - `POST /api/tasks` 请求参数：`keyword_id`、`mode`（可选，默认取 keywords.scrape_mode）、`max_pages`（可选，默认取配置，需 ≤ 全局上限）
   - `POST /api/tasks` 响应：任务 id 与状态；若该 keyword 已有进行中任务，返回 409 与冲突说明
@@ -65,9 +67,10 @@
 
 ## 6. 抓取模块（v1 Playwright）
 
-- `Scraper` 抽象接口：`search(keyword, pages)` 逐页产出解析结果、`fetch_company(company_id)` 抓公司详情。
+- `Scraper` 抽象接口：`search(keyword, pages, area)` 逐页产出解析结果、`fetch_company(company_id)` 抓公司详情。
 - PlaywrightScraper 实现：
   - 无头 Chromium 访问 51job 搜索页并翻页，遍历所有页（单任务最大页数可配置）。
+  - 搜索 URL 携带 `jobArea={area}`（来自 keywords.city），不指定时默认 000000（51job 站点默认上海，注意区分）。
   - 优先解析 HTML 中 `sensorsdata` 属性（jobId/jobTitle/jobSalary/jobArea/companyId 等，见 tt.py 样例），缺失字段走 DOM 选择器兜底。
   - 公司详情页单独抓取类型/行业/人数/活跃度。
   - 反爬策略：随机延时（3-8 秒）、模拟滚动、User-Agent 轮换、反自动化指纹（`--disable-blink-features=AutomationControlled` + init script 抹除 navigator.webdriver 等）；失败页重试 3 次后跳过并记失败。

@@ -8,6 +8,10 @@ from backend.app.schemas.keyword import KeywordCreate, KeywordOut, KeywordUpdate
 keywords_router = APIRouter(prefix="/api/keywords", tags=["keywords"])
 
 
+def _raise_dup(kw: str, city: str) -> None:
+    raise AppError(f"关键字已存在: {kw}（地区 {city}）", 409)
+
+
 @keywords_router.get("", response_model=list[KeywordOut])
 def list_keywords(db=Depends(get_db), user=Depends(get_current_user)):
     return db.query(Keyword).order_by(Keyword.id).all()
@@ -15,9 +19,9 @@ def list_keywords(db=Depends(get_db), user=Depends(get_current_user)):
 
 @keywords_router.post("", response_model=KeywordOut)
 def create_keyword(body: KeywordCreate, db=Depends(get_db), user=Depends(get_current_user)):
-    if db.query(Keyword).filter_by(keyword=body.keyword).first():
-        raise AppError(f"关键字已存在: {body.keyword}", 409)
-    kw = Keyword(keyword=body.keyword, scrape_mode=body.scrape_mode)
+    if db.query(Keyword).filter_by(keyword=body.keyword, city=body.city).first():
+        _raise_dup(body.keyword, body.city)
+    kw = Keyword(keyword=body.keyword, scrape_mode=body.scrape_mode, city=body.city)
     db.add(kw)
     db.commit()
     db.refresh(kw)
@@ -29,10 +33,15 @@ def update_keyword(keyword_id: int, body: KeywordUpdate, db=Depends(get_db), use
     kw = db.get(Keyword, keyword_id)
     if kw is None:
         raise AppError("关键字不存在", 404)
-    if body.keyword is not None:
-        if db.query(Keyword).filter(Keyword.keyword == body.keyword, Keyword.id != keyword_id).first():
-            raise AppError(f"关键字已存在: {body.keyword}", 409)
-        kw.keyword = body.keyword
+    new_kw = body.keyword if body.keyword is not None else kw.keyword
+    new_city = body.city if body.city is not None else kw.city
+    if body.keyword is not None or body.city is not None:
+        if db.query(Keyword).filter(
+            Keyword.keyword == new_kw, Keyword.city == new_city, Keyword.id != keyword_id
+        ).first():
+            _raise_dup(new_kw, new_city)
+        kw.keyword = new_kw
+        kw.city = new_city
     if body.scrape_mode is not None:
         kw.scrape_mode = body.scrape_mode
     db.commit()

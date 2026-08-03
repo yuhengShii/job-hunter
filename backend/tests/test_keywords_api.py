@@ -24,6 +24,7 @@ def test_keyword_crud(client):
     kid = resp.json()["id"]
     assert resp.json()["enabled"] is True
     assert resp.json()["scrape_mode"] == "playwright"
+    assert resp.json()["city"] == "000000"
 
     resp = client.post("/api/keywords", json={"keyword": "python"})
     assert resp.status_code == 409
@@ -42,6 +43,30 @@ def test_keyword_crud(client):
     resp = client.delete(f"/api/keywords/{kid}")
     assert resp.status_code == 200
     assert client.get("/api/keywords").json() == []
+
+
+def test_keyword_unique_by_keyword_and_city(client):
+    resp = client.post("/api/keywords", json={"keyword": "算法工程师", "city": "020000"})
+    assert resp.status_code == 200
+    assert resp.json()["city"] == "020000"
+
+    # 同关键字不同城市：允许
+    resp = client.post("/api/keywords", json={"keyword": "算法工程师", "city": "010000"})
+    assert resp.status_code == 200
+
+    # 同关键字同城市：409
+    resp = client.post("/api/keywords", json={"keyword": "算法工程师", "city": "020000"})
+    assert resp.status_code == 409
+
+    # 更新撞联合唯一：409
+    ids = [k["id"] for k in client.get("/api/keywords").json() if k["city"] == "010000"]
+    resp = client.put(f"/api/keywords/{ids[0]}", json={"city": "020000"})
+    assert resp.status_code == 409
+
+    # 更新 city 到未占用组合：200
+    resp = client.put(f"/api/keywords/{ids[0]}", json={"city": "080200"})
+    assert resp.status_code == 200
+    assert resp.json()["city"] == "080200"
 
 
 def test_keyword_requires_auth(config):

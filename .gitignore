@@ -226,3 +226,6 @@ logs/*
 # Frontend (Vue/Vite)
 node_modules/
 frontend/dist/
+
+# WorkBuddy local workspace memory
+.workbuddy/

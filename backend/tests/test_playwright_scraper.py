@@ -52,7 +52,7 @@ class _FakePW:
 
 
 def _seq_fetch(seq):
-    async def fetch(keyword, n):
+    async def fetch(keyword, n, area="000000"):
         return next(seq)
 
     return fetch
@@ -389,7 +389,7 @@ def test_search_aborts_after_three_consecutive_captcha_pages(monkeypatch):
     fetched = []
 
     def _counting_fetch(seq):
-        async def fetch(keyword, n):
+        async def fetch(keyword, n, area="000000"):
             fetched.append(n)
             return next(seq)
 
