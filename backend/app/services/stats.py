@@ -90,3 +90,18 @@ def tag_stats(db: Session, window: datetime | None, top_n: int = 10) -> list[dic
         for t in j.tags or []:
             counter[t] += 1
     return [{"tag": t, "count": n} for t, n in counter.most_common(top_n)]
+
+
+def distribution_stats(db: Session, window: datetime | None, city: str | None = None) -> dict:
+    jobs = _windowed_jobs(db, window).all()
+    counter: Counter = Counter()
+    for j in jobs:
+        if city is None:
+            key = j.city
+        else:
+            if j.city != city:
+                continue
+            key = j.district
+        counter[key or "未知"] += 1
+    items = [{"key": k, "count": n} for k, n in counter.most_common()]
+    return {"city": city, "items": items}
