@@ -40,6 +40,16 @@ logs/               日志
 
 ## 快速开始
 
+### 一键启动（Windows）
+
+```powershell
+.\start.ps1          # 生产模式：dist 缺失时自动构建，后端单端口托管 http://127.0.0.1:8000
+.\start.ps1 -Dev     # 开发模式：后端 8000 + Vite 5173（热更新，/api 代理），Ctrl+C 一并停止
+.\start.ps1 -Rebuild # 生产模式强制重新构建前端
+```
+
+### 手动方式
+
 ```bash
 # 安装依赖（Python 3.14 + uv）
 uv add fastapi sqlalchemy apscheduler playwright
@@ -68,4 +78,4 @@ npm run build        # 产出 frontend/dist，直接访问 http://127.0.0.1:8000
 - [x] 依赖安装、目录骨架
 - [x] 后端：数据模型 / 认证 / 任务调度 / 抓取引擎 / API / 统计
 - [x] 前端：Vue3 脚手架与页面
-- [ ] 测试：解析（HTML fixture）、API、薪资解析、统计聚合、前端 vitest
+- [x] 测试：解析（HTML fixture）、API、薪资解析、统计聚合、前端 vitest
