@@ -47,8 +47,33 @@
     <el-row :gutter="16" class="charts-row">
       <el-col :span="8" v-for="pie in pies" :key="pie.title">
         <el-card class="chart-card">
-          <template #header>{{ pie.title }}</template>
+          <template #header>
+            <div class="chart-header">
+              <span>{{ pie.title }}</span>
+              <el-button
+                v-if="pie.collapsible"
+                size="small"
+                link
+                type="primary"
+                @click="industryExpanded = !industryExpanded"
+              >
+                {{ industryExpanded ? '收起' : `展开全部（${industryItems.length}）` }}
+              </el-button>
+            </div>
+          </template>
           <div :ref="pie.ref" class="chart" />
+          <div v-if="pie.collapsible" class="pie-legend">
+            <span
+              v-for="item in legendIndustries"
+              :key="item.key"
+              class="pie-legend-item"
+              :class="{ 'is-dim': hiddenIndustries.has(item.key) }"
+              @click="toggleIndustry(item.key)"
+            >
+              <i class="pie-legend-swatch" :style="{ background: industryColor(item.key) }" />
+              {{ item.key }}（{{ item.count }}）
+            </span>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -123,9 +148,47 @@ function pieOption(data: { key: string; count: number }[]): EChartsOption {
   }
 }
 
-const industryOption = computed<EChartsOption>(() => pieOption(company.value?.industry ?? []))
+const INDUSTRY_COLORS = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
+
+function industryPieOption(data: { key: string; count: number }[]): EChartsOption {
+  return {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { show: false, data: data.map((i) => i.key) },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '70%'],
+        data: data.map((i) => ({ name: i.key, value: i.count })),
+      },
+    ],
+  }
+}
+
+const industryExpanded = ref(false)
+const hiddenIndustries = ref<Set<string>>(new Set())
+const industryItems = computed(() => company.value?.industry ?? [])
+const legendIndustries = computed(() =>
+  industryExpanded.value ? industryItems.value : industryItems.value.slice(0, 10),
+)
+const industryOption = computed<EChartsOption>(() => industryPieOption(industryItems.value))
 const typeOption = computed<EChartsOption>(() => pieOption(company.value?.type ?? []))
 const sizeOption = computed<EChartsOption>(() => pieOption(company.value?.size ?? []))
+
+function industryColor(name: string): string {
+  const idx = industryItems.value.findIndex((i) => i.key === name)
+  return INDUSTRY_COLORS[(idx < 0 ? 0 : idx) % INDUSTRY_COLORS.length]
+}
+
+function toggleIndustry(name: string) {
+  const set = new Set(hiddenIndustries.value)
+  if (set.has(name)) {
+    set.delete(name)
+  } else {
+    set.add(name)
+  }
+  hiddenIndustries.value = set
+  industryChart.value?.dispatchAction({ type: 'legendToggleSelect', name })
+}
 
 function setRef(target: Ref<HTMLElement | null>) {
   return (el: unknown) => {
@@ -134,9 +197,9 @@ function setRef(target: Ref<HTMLElement | null>) {
 }
 
 const pies = [
-  { title: '行业分布', ref: setRef(industryEl) },
-  { title: '类型分布', ref: setRef(typeEl) },
-  { title: '规模分布', ref: setRef(sizeEl) },
+  { title: '行业分布', ref: setRef(industryEl), collapsible: true },
+  { title: '类型分布', ref: setRef(typeEl), collapsible: false },
+  { title: '规模分布', ref: setRef(sizeEl), collapsible: false },
 ]
 
 const trendOption = computed<EChartsOption>(() => ({
@@ -156,7 +219,7 @@ const tagsOption = computed<EChartsOption>(() => ({
 }))
 
 useChart(salaryEl, salaryOption)
-useChart(industryEl, industryOption)
+const industryChart = useChart(industryEl, industryOption)
 useChart(typeEl, typeOption)
 useChart(sizeEl, sizeOption)
 useChart(trendEl, trendOption)
@@ -213,6 +276,30 @@ onMounted(async () => {
 .chart-card { margin-bottom: 16px; }
 .chart-header { display: flex; justify-content: space-between; align-items: center; }
 .chart { height: 340px; }
+.pie-legend {
+  margin-top: 8px;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 24px;
+}
+.pie-legend-item {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--el-text-color-regular);
+}
+.pie-legend-item:hover { color: var(--el-color-primary); }
+.pie-legend-item.is-dim { opacity: 0.35; text-decoration: line-through; }
+.pie-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
 .card-num { font-size: 26px; font-weight: 600; text-align: center; }
 .card-label { margin-top: 4px; text-align: center; color: var(--el-text-color-secondary); }
 </style>
