@@ -34,69 +34,75 @@
 
 - [ ] **Step 1: 写失败测试**
 
-在 `backend/tests/test_stats.py` 追加（先用 grep 确认该文件现有内容与 fixture 模式，conftest 已提供 db session fixture；若 test_stats.py 已有 build_stats 等辅助函数则复用）：
+在 `backend/tests/test_stats.py` 追加（沿用该文件既有模式：`_seed(config)` 播种 + `SessionLocal` 内断言 + 内联 TestClient；`_seed` 已建成功任务（窗口 base=2026-07-01 10:00，旧任务 2026-06-01）与职位 j1=上海/j2=北京（窗口内，无 district）/j3=上海（窗口外））。import 行改为 `from backend.app.services.stats import get_window_start, overview, tag_stats, distribution_stats`：
 ```python
-def test_distribution_by_city(db, sample_jobs):
-    from datetime import datetime, timedelta
-    from backend.app.models import Job
-    base = datetime.now() - timedelta(days=30)
-    db.add_all([
-        Job(job_id="d1", title="t", city="上海", district="浦东新区", updated_at=base + timedelta(hours=1)),
-        Job(job_id="d2", title="t", city="上海", district="闵行区", updated_at=base + timedelta(hours=2)),
-        Job(job_id="d3", title="t", city="北京", district="海淀区", updated_at=base + timedelta(hours=3)),
-        Job(job_id="d4", title="t", city=None, district=None, updated_at=base + timedelta(hours=4)),
-        Job(job_id="d5", title="t", city="上海", district=None, updated_at=base - timedelta(days=1)),
-    ])
-    db.commit()
-    from backend.app.services import stats as stats_service
-    res = stats_service.distribution_stats(db, base)
-    by_key = {i["key"]: i["count"] for i in res["items"]}
-    assert res["city"] is None
-    assert by_key == {"上海": 2, "北京": 1, "未知": 1}
-    # 窗口过滤：窗口外的 d5 不计入
-    assert "上海" not in [i["key"] for i in res["items"]] or by_key["上海"] == 2
-```
-（窗口过滤断言以 d5 排除为准：d5 的 updated_at 早于 base，不计入。）
-
-```python
-def test_distribution_by_district(db):
-    from datetime import datetime, timedelta
-    from backend.app.models import Job
-    from backend.app.services import stats as stats_service
-    base = datetime.now() - timedelta(days=30)
-    db.add_all([
-        Job(job_id="e1", title="t", city="上海", district="浦东新区", updated_at=base + timedelta(hours=1)),
-        Job(job_id="e2", title="t", city="上海", district="闵行区", updated_at=base + timedelta(hours=2)),
-        Job(job_id="e3", title="t", city="上海", district=None, updated_at=base + timedelta(hours=3)),
-        Job(job_id="e4", title="t", city="北京", district="海淀区", updated_at=base + timedelta(hours=4)),
-    ])
-    db.commit()
-    res = stats_service.distribution_stats(db, base, city="上海")
-    by_key = {i["key"]: i["count"] for i in res["items"]}
-    assert res["city"] == "上海"
-    assert by_key == {"浦东新区": 1, "闵行区": 1, "未知": 1}
-    assert "海淀区" not in by_key
-    counts = [i["count"] for i in res["items"]]
-    assert counts == sorted(counts, reverse=True)
-```
-
-API 测试（`backend/tests/test_stats_api.py` 新建，参考现有 API 测试的 auth fixture 模式——先 grep `test_tasks_api.py`/`test_stats.py` 中如何获取 token 与 client）：
-```python
-def test_distribution_api(client, auth_headers):
-    resp = client.get("/api/stats/distribution", headers=auth_headers)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "city" in data and "items" in data
+def test_distribution_by_city(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        res = distribution_stats(s, window)
+        by_key = {i["key"]: i["count"] for i in res["items"]}
+        assert res["city"] is None
+        assert by_key == {"上海": 1, "北京": 1}
 
 
-def test_distribution_api_requires_auth(client):
-    resp = client.get("/api/stats/distribution")
-    assert resp.status_code == 401
+def test_distribution_window_filter(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        old = window - timedelta(days=30)
+        s.add(Job(job_id="w1", title="t", city="广州", updated_at=old))
+        s.commit()
+        res = distribution_stats(s, window)
+        keys = [i["key"] for i in res["items"]]
+        assert "广州" not in keys
+        assert set(keys) == {"上海", "北京"}
+
+
+def test_distribution_by_district(config):
+    _seed(config)
+    with SessionLocal() as s:
+        base = get_window_start(s)
+        s.add(Job(job_id="d1", title="t", city="上海", district="浦东新区", updated_at=base + timedelta(hours=5)))
+        s.add(Job(job_id="d2", title="t", city="上海", district="闵行区", updated_at=base + timedelta(hours=6)))
+        s.add(Job(job_id="d3", title="t", city="北京", district="海淀区", updated_at=base + timedelta(hours=7)))
+        s.commit()
+        res = distribution_stats(s, base, city="上海")
+        by_key = {i["key"]: i["count"] for i in res["items"]}
+        assert res["city"] == "上海"
+        assert by_key == {"浦东新区": 1, "闵行区": 1, "未知": 1}  # j1 无 district -> 未知
+        counts = [i["count"] for i in res["items"]]
+        assert counts == sorted(counts, reverse=True)
+        res2 = distribution_stats(s, base, city="北京")
+        assert all(i["key"] == "未知" for i in res2["items"])
+
+
+def test_distribution_api(config):
+    _seed(config)
+    app = create_app(config)
+    with TestClient(app) as c:
+        token = c.post("/api/auth/login", json={"username": config.auth_username, "password": config.auth_password}).json()["access_token"]
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        resp = c.get("/api/stats/distribution")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "city" in data and "items" in data
+        assert {i["key"] for i in data["items"]} == {"上海", "北京"}
+        resp2 = c.get("/api/stats/distribution", params={"city": "上海"})
+        assert resp2.json()["city"] == "上海"
+
+
+def test_distribution_api_requires_auth(config):
+    _seed(config)
+    app = create_app(config)
+    with TestClient(app) as c:
+        resp = c.get("/api/stats/distribution")
+        assert resp.status_code == 401
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
 
-Run（仓库根，先 `$env:PYTHONUTF8 = "1"`）: `uv run pytest backend/tests/test_stats.py backend/tests/test_stats_api.py -q`
+Run（仓库根，先 `$env:PYTHONUTF8 = "1"`）: `uv run pytest backend/tests/test_stats.py -q`
 Expected: FAIL（`distribution_stats` 不存在 / 路由 404）。
 
 - [ ] **Step 3: 实现服务函数与路由**
@@ -134,7 +140,7 @@ Expected: 全部 PASS（原 63 项 + 新增 ≥4 项）。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/services/stats.py backend/app/api/stats.py backend/tests/test_stats.py backend/tests/test_stats_api.py
+git add backend/app/services/stats.py backend/app/api/stats.py backend/tests/test_stats.py
 git commit -m "feat: job distribution stats endpoint"
 ```
 
@@ -237,6 +243,6 @@ git commit -m "feat: frontend job distribution chart"
 ## Self-Review 记录
 
 - **Spec 覆盖**：spec §2.1 服务函数（Task 1）、§2.2 路由（Task 1）、§2.3 响应形态（Task 1/2 契约一致）、§3.1 api 封装（Task 2）、§3.2 卡片与联动（Task 2）、§4 测试（Task 1 pytest + Task 2 验证）、§5 验收（Task 1/2 验证步骤）。无遗漏。
-- **占位符扫描**：Task 1 测试代码需按既有 fixture 模式微调（conftest fixture 名与 auth fixture 以现有测试为准，brief 已注明先 grep 再写），其余含完整代码。
+- **占位符扫描**：Task 1 测试已按 `test_stats.py` 实际模式（`_seed(config)` + `get_window_start` + 内联 TestClient 登录）给出完整代码，无需额外适配；其余步骤均含完整代码。
 - **类型一致性**：`DistributionResult`/`DistributionItem` 与后端响应 `{"city": city|null, "items": [{"key","count"}]}` 一致；`statsApi.distribution(keyword_id, city)` 参数顺序与现有 `statsApi.salary(keyword_id, group_by)` 风格一致；`distCity`/`distCityOptions`/`distEl`/`distOption` 命名在 Task 2 内自洽。
 - **已知取舍**：城市选择器选项仅在「全部城市」视图刷新时更新（选城市后不更新选项，切换回全部城市时刷新）——简单且满足需求；`未知` 城市名不出现在选择器选项（该桶是 null 兜底，不可作为筛选目标）。
