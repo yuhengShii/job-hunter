@@ -35,6 +35,18 @@
       <div ref="salaryEl" class="chart" />
     </el-card>
 
+    <el-card class="chart-card">
+      <template #header>
+        <div class="chart-header">
+          <span>职位分布{{ distCity ? `（${distCity}）` : '（按城市）' }}</span>
+          <el-select v-model="distCity" placeholder="全部城市" clearable style="width: 160px" @change="loadDistribution">
+            <el-option v-for="c in distCityOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+        </div>
+      </template>
+      <div ref="distEl" class="chart" />
+    </el-card>
+
     <el-row :gutter="16" class="charts-row">
       <el-col :span="8" v-for="pie in pies" :key="pie.title">
         <el-card class="chart-card">
@@ -59,7 +71,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref } from 'vue'
 import type { EChartsOption } from 'echarts'
-import { statsApi, type CompanyStats, type SalaryStats } from '@/api/stats'
+import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult } from '@/api/stats'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
 
@@ -72,6 +84,7 @@ const salary = ref<SalaryStats | null>(null)
 const company = ref<CompanyStats | null>(null)
 const trend = ref<{ days: { date: string; count: number }[] } | null>(null)
 const tags = ref<{ tag: string; count: number }[]>([])
+const dist = ref<DistributionResult | null>(null)
 
 const cards = computed(() => [
   { label: '职位总数', value: overview.value.total_jobs },
@@ -86,6 +99,9 @@ const typeEl = ref<HTMLElement | null>(null)
 const sizeEl = ref<HTMLElement | null>(null)
 const trendEl = ref<HTMLElement | null>(null)
 const tagsEl = ref<HTMLElement | null>(null)
+const distEl = ref<HTMLElement | null>(null)
+const distCity = ref<string | null>(null)
+const distCityOptions = ref<string[]>([])
 
 const salaryOption = computed<EChartsOption>(() => {
   const items = salary.value?.items ?? []
@@ -151,17 +167,27 @@ useChart(sizeEl, sizeOption)
 useChart(trendEl, trendOption)
 useChart(tagsEl, tagsOption)
 
+const distOption = computed<EChartsOption>(() => ({
+  tooltip: { trigger: 'axis' },
+  grid: { left: 90, right: 24, top: 40, bottom: 80 },
+  xAxis: { type: 'category', data: (dist.value?.items ?? []).map((i) => i.key), axisLabel: { interval: 0, rotate: 30 } },
+  yAxis: { type: 'value', name: '职位数' },
+  series: [{ type: 'bar', data: (dist.value?.items ?? []).map((i) => i.count), barMaxWidth: 40 }],
+}))
+useChart(distEl, distOption)
+
 let statsSeq = 0
 
 async function reload() {
   const seq = ++statsSeq
   const kw = keywordId.value
-  const [ov, sa, co, tr, ta] = await Promise.all([
+  const [ov, sa, co, tr, ta, di] = await Promise.all([
     statsApi.overview(kw),
     statsApi.salary(kw, groupBy.value),
     statsApi.company(kw),
     statsApi.trend(kw, 30),
     statsApi.tags(kw, 10),
+    statsApi.distribution(kw, distCity.value),
   ])
   if (seq !== statsSeq) return
   overview.value = ov
@@ -169,6 +195,10 @@ async function reload() {
   company.value = co
   trend.value = tr
   tags.value = ta
+  dist.value = di
+  if (!distCity.value) {
+    distCityOptions.value = (di.items ?? []).map((i) => i.key).filter((k) => k !== '未知')
+  }
 }
 
 async function loadSalary() {
@@ -176,6 +206,16 @@ async function loadSalary() {
   const sa = await statsApi.salary(keywordId.value, groupBy.value)
   if (seq !== statsSeq) return
   salary.value = sa
+}
+
+async function loadDistribution() {
+  const seq = ++statsSeq
+  const di = await statsApi.distribution(keywordId.value, distCity.value)
+  if (seq !== statsSeq) return
+  dist.value = di
+  if (!distCity.value) {
+    distCityOptions.value = (di.items ?? []).map((i) => i.key).filter((k) => k !== '未知')
+  }
 }
 
 onMounted(async () => {

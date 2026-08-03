@@ -41,6 +41,16 @@ export interface TagItem {
   count: number
 }
 
+export interface DistributionItem {
+  key: string
+  count: number
+}
+
+export interface DistributionResult {
+  city: string | null
+  items: DistributionItem[]
+}
+
 export const statsApi = {
   overview: (keyword_id?: number | null) =>
     http.get<StatsOverview>('/stats/overview', { params: { keyword_id } }).then((r) => r.data),
@@ -52,4 +62,6 @@ export const statsApi = {
     http.get<TrendResult>('/stats/trend', { params: { keyword_id, days } }).then((r) => r.data),
   tags: (keyword_id?: number | null, top_n = 10) =>
     http.get<TagItem[]>('/stats/tags', { params: { keyword_id, top_n } }).then((r) => r.data),
+  distribution: (keyword_id?: number | null, city?: string | null) =>
+    http.get<DistributionResult>('/stats/distribution', { params: { keyword_id, city } }).then((r) => r.data),
 }

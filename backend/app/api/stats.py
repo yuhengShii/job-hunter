@@ -34,3 +34,9 @@ def get_trend(keyword_id: int | None = None, days: int = 30, db=Depends(get_db),
 def get_tags(keyword_id: int | None = None, top_n: int = 10, db=Depends(get_db), user=Depends(get_current_user)):
     window = stats_service.get_window_start(db, keyword_id)
     return stats_service.tag_stats(db, window, top_n=top_n)
+
+
+@stats_router.get("/distribution")
+def get_distribution(keyword_id: int | None = None, city: str | None = None, db=Depends(get_db), user=Depends(get_current_user)):
+    window = stats_service.get_window_start(db, keyword_id)
+    return stats_service.distribution_stats(db, window, city=city)
