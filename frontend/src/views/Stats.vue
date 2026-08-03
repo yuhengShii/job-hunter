@@ -209,9 +209,12 @@ async function loadSalary() {
 }
 
 async function loadDistribution() {
-  dist.value = await statsApi.distribution(keywordId.value, distCity.value)
+  const seq = ++statsSeq
+  const di = await statsApi.distribution(keywordId.value, distCity.value)
+  if (seq !== statsSeq) return
+  dist.value = di
   if (!distCity.value) {
-    distCityOptions.value = (dist.value?.items ?? []).map((i) => i.key).filter((k) => k !== '未知')
+    distCityOptions.value = (di.items ?? []).map((i) => i.key).filter((k) => k !== '未知')
   }
 }
 
