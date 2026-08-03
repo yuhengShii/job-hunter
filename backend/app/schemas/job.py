@@ -17,6 +17,8 @@ class JobOut(BaseModel):
     publish_time: datetime | None
     source: str
     company_id: str | None
+    company_name: str | None = None
+    company_activity: str | None = None
     job_url: str | None
     created_at: datetime
     updated_at: datetime

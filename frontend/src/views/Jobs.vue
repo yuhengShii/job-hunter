@@ -29,8 +29,11 @@
     <el-card>
       <el-table :data="page.items" v-loading="loading" @row-click="openDetail">
         <el-table-column prop="title" label="职位" min-width="220" show-overflow-tooltip />
-        <el-table-column label="公司" width="150">
-          <template #default="{ row }">{{ row.company_id ?? '-' }}</template>
+        <el-table-column label="公司" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.company_name ?? row.company_id ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="活跃度" width="110">
+          <template #default="{ row }">{{ row.company_activity ?? '-' }}</template>
         </el-table-column>
         <el-table-column label="城市" width="110">
           <template #default="{ row }">{{ row.city ?? '-' }}</template>
