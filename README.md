@@ -46,6 +46,7 @@ logs/               日志
 .\start.ps1          # 生产模式：dist 缺失时自动构建，后端单端口托管 http://127.0.0.1:8000
 .\start.ps1 -Dev     # 开发模式：后端 8000 + Vite 5173（热更新，/api 代理），Ctrl+C 一并停止
 .\start.ps1 -Rebuild # 生产模式强制重新构建前端
+.\start.ps1 -Stop    # 清理残留的 job-hunter 进程（进程被强杀/关窗后兜底用）
 ```
 
 ### 手动方式
