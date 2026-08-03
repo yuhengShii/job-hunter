@@ -35,6 +35,9 @@
         <el-table-column label="城市" width="110">
           <template #default="{ row }">{{ row.city ?? '-' }}</template>
         </el-table-column>
+        <el-table-column label="区域" width="110">
+          <template #default="{ row }">{{ row.district ?? '-' }}</template>
+        </el-table-column>
         <el-table-column label="薪资" width="130">
           <template #default="{ row }">{{ formatSalaryRaw(row.salary_raw) }}</template>
         </el-table-column>
