@@ -37,6 +37,6 @@ def get_tags(keyword_id: int | None = None, top_n: int = 10, db=Depends(get_db),
 
 
 @stats_router.get("/distribution")
-def get_distribution(keyword_id: int | None = None, city: str | None = None, db=Depends(get_db), user=Depends(get_current_user)):
+def get_distribution(keyword_id: int | None = None, group_by: str = "city", db=Depends(get_db), user=Depends(get_current_user)):
     window = stats_service.get_window_start(db, keyword_id)
-    return stats_service.distribution_stats(db, window, city=city)
+    return stats_service.distribution_stats(db, window, group_by=group_by)

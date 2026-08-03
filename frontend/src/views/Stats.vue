@@ -10,6 +10,11 @@
       >
         <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="kw.keyword" :value="kw.id" />
       </el-select>
+      <el-select v-model="groupBy" style="width: 140px; margin-left: 16px" @change="reload">
+        <el-option label="按城市" value="city" />
+        <el-option label="按区域" value="district" />
+        <el-option label="按地区" value="area" />
+      </el-select>
     </el-card>
 
     <el-row :gutter="16" class="cards-row">
@@ -25,11 +30,6 @@
       <template #header>
         <div class="chart-header">
           <span>薪资分布（中位薪资）</span>
-          <el-select v-model="groupBy" style="width: 140px" @change="loadSalary">
-            <el-option label="按城市" value="city" />
-            <el-option label="按区域" value="district" />
-            <el-option label="按地区" value="area" />
-          </el-select>
         </div>
       </template>
       <div ref="salaryEl" class="chart" />
@@ -38,10 +38,7 @@
     <el-card class="chart-card">
       <template #header>
         <div class="chart-header">
-          <span>职位分布{{ distCity ? `（${distCity}）` : '（按城市）' }}</span>
-          <el-select v-model="distCity" placeholder="全部城市" clearable style="width: 160px" @change="loadDistribution">
-            <el-option v-for="c in distCityOptions" :key="c" :label="c" :value="c" />
-          </el-select>
+          <span>职位分布</span>
         </div>
       </template>
       <div ref="distEl" class="chart" />
@@ -100,8 +97,6 @@ const sizeEl = ref<HTMLElement | null>(null)
 const trendEl = ref<HTMLElement | null>(null)
 const tagsEl = ref<HTMLElement | null>(null)
 const distEl = ref<HTMLElement | null>(null)
-const distCity = ref<string | null>(null)
-const distCityOptions = ref<string[]>([])
 
 const salaryOption = computed<EChartsOption>(() => {
   const items = salary.value?.items ?? []
@@ -187,7 +182,7 @@ async function reload() {
     statsApi.company(kw),
     statsApi.trend(kw, 30),
     statsApi.tags(kw, 10),
-    statsApi.distribution(kw, distCity.value),
+    statsApi.distribution(kw, groupBy.value),
   ])
   if (seq !== statsSeq) return
   overview.value = ov
@@ -196,26 +191,6 @@ async function reload() {
   trend.value = tr
   tags.value = ta
   dist.value = di
-  if (!distCity.value) {
-    distCityOptions.value = (di.items ?? []).map((i) => i.key).filter((k) => k !== '未知')
-  }
-}
-
-async function loadSalary() {
-  const seq = ++statsSeq
-  const sa = await statsApi.salary(keywordId.value, groupBy.value)
-  if (seq !== statsSeq) return
-  salary.value = sa
-}
-
-async function loadDistribution() {
-  const seq = ++statsSeq
-  const di = await statsApi.distribution(keywordId.value, distCity.value)
-  if (seq !== statsSeq) return
-  dist.value = di
-  if (!distCity.value) {
-    distCityOptions.value = (di.items ?? []).map((i) => i.key).filter((k) => k !== '未知')
-  }
 }
 
 onMounted(async () => {
