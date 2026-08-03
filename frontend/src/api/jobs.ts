@@ -14,6 +14,8 @@ export interface JobOut {
   publish_time: string | null
   source: string
   company_id: string | null
+  company_name?: string | null
+  company_activity?: string | null
   job_url: string | null
   created_at: string
   updated_at: string

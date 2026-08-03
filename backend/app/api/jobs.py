@@ -3,10 +3,28 @@ from sqlalchemy import or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
-from backend.app.models import Job
+from backend.app.models import Company, Job
 from backend.app.schemas.job import JobOut, JobPage
 
 jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+def _with_company(jobs: list[Job], db) -> list[JobOut]:
+    """为职位附加公司名称与活跃度（来自 companies 表）。"""
+    ids = {j.company_id for j in jobs if j.company_id}
+    comp_map = {
+        c.company_id: c
+        for c in db.query(Company).filter(Company.company_id.in_(ids)).all()
+    }
+    out = []
+    for j in jobs:
+        item = JobOut.model_validate(j)
+        c = comp_map.get(j.company_id)
+        if c:
+            item.company_name = c.name
+            item.company_activity = c.activity
+        out.append(item)
+    return out
 
 
 @jobs_router.get("", response_model=JobPage)
@@ -38,7 +56,7 @@ def list_jobs(
         items = [j for j in items if tag in (j.tags or [])]
     total = len(items)
     start = (page - 1) * page_size
-    return JobPage(total=total, items=items[start : start + page_size])
+    return JobPage(total=total, items=_with_company(items[start : start + page_size], db))
 
 
 @jobs_router.get("/{job_key}", response_model=JobOut)
@@ -46,4 +64,4 @@ def get_job(job_key: str, db=Depends(get_db), user=Depends(get_current_user)):
     job = db.query(Job).filter(Job.job_id == job_key).first()
     if job is None:
         raise AppError("职位不存在", 404)
-    return job
+    return _with_company([job], db)[0]
