@@ -74,7 +74,7 @@ def test_distribution_by_district(config):
         counts = [i["count"] for i in res["items"]]
         assert counts == sorted(counts, reverse=True)
         res2 = distribution_stats(s, base, city="北京")
-        assert all(i["key"] == "未知" for i in res2["items"])
+        assert {i["key"]: i["count"] for i in res2["items"]} == {"未知": 1, "海淀区": 1}  # j2 无 district -> 未知，d3 海淀区
 
 
 def test_distribution_api(config):
