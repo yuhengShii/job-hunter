@@ -78,58 +78,90 @@ class PlaywrightScraper(Scraper):
         self, keyword: str, pages: int, area: str = "000000"
     ) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
+        page = await self._new_page()
         consecutive_failures = 0
         consecutive_captcha = 0
-        for n in range(1, pages + 1):
-            result = await self._fetch_page(keyword, n, area)
-            if result.failed:
-                if result.captcha:
-                    consecutive_failures = 0
-                    logger.warning("滑块验证未通过，冷却 %s 秒后重试: page=%s", _CAPTCHA_COOLDOWN, n)
-                    await asyncio.sleep(_CAPTCHA_COOLDOWN)
-                    result = await self._fetch_page(keyword, n, area)
-                    if result.failed:
-                        consecutive_captcha += 1
-                        logger.warning("第 %s 页抓取失败（冷却重试仍失败）: keyword=%s", n, keyword)
-                        if consecutive_captcha >= 3:
-                            logger.warning("连续 %s 页验证码未通过，放弃剩余页", consecutive_captcha)
-                            return
+        last_ids: set[str] | None = None
+        try:
+            for n in range(1, pages + 1):
+                result, page = await self._fetch_page(page, keyword, n, area)
+                if not result.failed and result.jobs and last_ids is not None:
+                    ids = {j.job_id for j in result.jobs}
+                    if ids == last_ids:
+                        logger.warning(
+                            "第 %s 页与上一页职位完全相同，视为翻页失败: keyword=%s", n, keyword
+                        )
+                        result = PageResult(page_num=n, jobs=[], failed=True)
+                if not result.failed:
+                    last_ids = {j.job_id for j in result.jobs}
+                if result.failed:
+                    if result.captcha:
+                        consecutive_failures = 0
+                        logger.warning("滑块验证未通过，冷却 %s 秒后重试: page=%s", _CAPTCHA_COOLDOWN, n)
+                        await asyncio.sleep(_CAPTCHA_COOLDOWN)
+                        result, page = await self._fetch_page(page, keyword, n, area)
+                        if result.failed:
+                            consecutive_captcha += 1
+                            logger.warning("第 %s 页抓取失败（冷却重试仍失败）: keyword=%s", n, keyword)
+                            if consecutive_captcha >= 3:
+                                logger.warning("连续 %s 页验证码未通过，放弃剩余页", consecutive_captcha)
+                                return
+                        else:
+                            consecutive_captcha = 0
+                    elif result.blocked:
+                        consecutive_captcha = 0
+                        consecutive_failures = 0
+                        degraded = await self._degrade_to_headful()
+                        if degraded:
+                            result, page = await self._fetch_page(page, keyword, n, area)
+                        if result.failed:
+                            logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                        else:
+                            consecutive_failures = 0
                     else:
                         consecutive_captcha = 0
-                elif result.blocked:
-                    consecutive_captcha = 0
-                    consecutive_failures = 0
-                    degraded = await self._degrade_to_headful()
-                    if degraded:
-                        result = await self._fetch_page(keyword, n, area)
-                    if result.failed:
-                        logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
-                    else:
-                        consecutive_failures = 0
+                        consecutive_failures += 1
+                        degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
+                        if degraded:
+                            result, page = await self._fetch_page(page, keyword, n, area)
+                        if result.failed:
+                            logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                        else:
+                            consecutive_failures = 0
                 else:
                     consecutive_captcha = 0
-                    consecutive_failures += 1
-                    degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
-                    if degraded:
-                        result = await self._fetch_page(keyword, n, area)
-                    if result.failed:
-                        logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
-                    else:
-                        consecutive_failures = 0
-            else:
-                consecutive_captcha = 0
-                consecutive_failures = 0
-            yield result
-            await asyncio.sleep(random.uniform(3.0, 8.0))
+                    consecutive_failures = 0
+                yield result
+                await asyncio.sleep(random.uniform(3.0, 8.0))
+        finally:
+            await page.close()
 
-    async def _fetch_page(self, keyword: str, page_num: int, area: str = "000000") -> PageResult:
+    async def _click_next_page(self, page, target_page_num: int) -> None:
+        """51job 新版 SPA：URL pageNum 参数不生效（实测各页返回同一批职位），
+        必须点击分页器按钮触发前端翻页。"""
+        next_btn = page.locator(".el-pagination .btn-next, .el-pager .btn-next").first
+        await next_btn.click(timeout=15000)
+        await page.wait_for_function(
+            f"document.querySelector('.el-pager li.number.active')?.textContent.trim() === '{target_page_num}'",
+            timeout=15000,
+        )
+        await page.wait_for_timeout(800)
+
+    async def _fetch_page(
+        self, page, keyword: str, page_num: int, area: str = "000000"
+    ) -> tuple:
         await self._ensure_browser()
         last_result: PageResult | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
-            page = await self._new_page()
             try:
-                url = _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
-                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                if page.is_closed() or page_num == 1:
+                    if page.is_closed():
+                        page = await self._new_page()
+                        logger.warning("第 %s 页浏览器已重建，回退为 URL 加载", page_num)
+                    url = _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                else:
+                    await self._click_next_page(page, page_num)
                 try:
                     await page.wait_for_selector(_JOB_CARD_SELECTOR, timeout=30000)
                 except PWTimeoutError:
@@ -141,10 +173,10 @@ class PlaywrightScraper(Scraper):
                                 await page.wait_for_selector(_JOB_CARD_SELECTOR, timeout=30000)
                                 html = await page.content()
                                 last_result = parse_search_page(html, page_num)
-                                return last_result
-                            return last_result
+                                return last_result, page
+                            return last_result, page
                         if last_result.blocked:
-                            return last_result
+                            return last_result, page
                         raise
                 if page_num == 1:
                     for _ in range(3):
@@ -153,15 +185,13 @@ class PlaywrightScraper(Scraper):
                     await page.wait_for_timeout(1500)
                 html = await page.content()
                 last_result = parse_search_page(html, page_num)
-                return last_result
+                return last_result, page
             except Exception as exc:
                 logger.warning("第 %s 页第 %s 次尝试失败: %s", page_num, attempt, exc)
                 await asyncio.sleep(attempt * 2.0)
-            finally:
-                await page.close()
         if last_result is None:
-            return PageResult(page_num=page_num, jobs=[], failed=True)
-        return last_result
+            return PageResult(page_num=page_num, jobs=[], failed=True), page
+        return last_result, page
 
     async def fetch_company(self, company_id: str, company_url: str) -> CompanyDraft | None:
         if not company_url:
