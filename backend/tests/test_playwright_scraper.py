@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import inspect
 from collections.abc import AsyncGenerator
 from types import SimpleNamespace
@@ -21,9 +21,34 @@ def test_scraper_is_async_generator():
     assert inspect.iscoroutinefunction(s.close)
 
 
+class _FakePage:
+    def is_closed(self):
+        return False
+
+    async def close(self):
+        pass
+
+
+class _FakeContext:
+    def __init__(self):
+        self.init_scripts = []
+
+    async def add_init_script(self, script):
+        pass
+
+    async def new_page(self):
+        return _FakePage()
+
+    async def close(self):
+        pass
+
+
 class _FakeBrowser:
     async def close(self):
         pass
+
+    async def new_context(self, **kwargs):
+        return _FakeContext()
 
 
 class _FakeChromium:
@@ -52,8 +77,8 @@ class _FakePW:
 
 
 def _seq_fetch(seq):
-    async def fetch(keyword, n, area="000000"):
-        return next(seq)
+    async def fetch(page, keyword, n, area="000000"):
+        return next(seq), page
 
     return fetch
 
@@ -161,6 +186,9 @@ def test_fetch_page_returns_early_on_blocked(monkeypatch):
     pages_created = []
 
     class _FakePage:
+        def is_closed(self):
+            return False
+
         async def goto(self, *a, **k):
             pass
 
@@ -213,9 +241,11 @@ def test_fetch_page_returns_early_on_blocked(monkeypatch):
     s = PlaywrightScraper(headful=False)
 
     async def run():
-        return await s._fetch_page("python", 1)
+        await s._ensure_browser()
+        page = await s._new_page()
+        return await s._fetch_page(page, "python", 1)
 
-    result = asyncio.run(run())
+    result, page = asyncio.run(run())
     assert result.failed
     assert result.blocked
     assert len(pages_created) == 1   # blocked 页只尝试一次，不做无头重试
@@ -232,6 +262,9 @@ def test_fetch_page_solves_captcha_then_returns_list(monkeypatch):
     class _StatePage:
         def __init__(self):
             self.times = 0
+
+        def is_closed(self):
+            return False
 
         async def goto(self, *a, **k):
             pass
@@ -301,9 +334,11 @@ def test_fetch_page_solves_captcha_then_returns_list(monkeypatch):
     s = PlaywrightScraper(headful=False)
 
     async def run():
-        return await s._fetch_page("python", 1)
+        await s._ensure_browser()
+        page = await s._new_page()
+        return await s._fetch_page(page, "python", 1)
 
-    result = asyncio.run(run())
+    result, page = asyncio.run(run())
     assert not result.failed
     assert len(result.jobs) == 1
     assert len(solved) == 1
@@ -389,9 +424,9 @@ def test_search_aborts_after_three_consecutive_captcha_pages(monkeypatch):
     fetched = []
 
     def _counting_fetch(seq):
-        async def fetch(keyword, n, area="000000"):
+        async def fetch(page, keyword, n, area="000000"):
             fetched.append(n)
-            return next(seq)
+            return next(seq), page
 
         return fetch
 
@@ -421,3 +456,4 @@ def test_search_aborts_after_three_consecutive_captcha_pages(monkeypatch):
     assert [r.page_num for r in out] == [1, 2]         # 第 3 页结果不产出，任务提前结束
     assert len(fetched) == 6                           # 无第 4 页抓取（seq 恰好耗尽）
     assert len(launches) == 1                          # 未触发 headful 降级
+
