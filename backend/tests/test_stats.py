@@ -68,7 +68,7 @@ def test_distribution_by_city(config):
         window = get_window_start(s)
         res = distribution_stats(s, window)
         by_key = {i["key"]: i["count"] for i in res["items"]}
-        assert res["city"] is None
+        assert res["group_by"] == "city"
         assert by_key == {"上海": 1, "北京": 1}
 
 
@@ -93,15 +93,26 @@ def test_distribution_by_district(config):
         s.add(Job(job_id="d2", title="t", city="上海", district="闵行区", updated_at=base + timedelta(hours=6)))
         s.add(Job(job_id="d3", title="t", city="北京", district="海淀区", updated_at=base + timedelta(hours=7)))
         s.commit()
-        res = distribution_stats(s, base, city="上海")
+        res = distribution_stats(s, base, group_by="district")
         by_key = {i["key"]: i["count"] for i in res["items"]}
-        assert res["city"] == "上海"
-        assert by_key == {"浦东新区": 1, "闵行区": 1, "未知": 1}  # j1 无 district -> 未知
+        assert res["group_by"] == "district"
+        assert by_key == {"未知": 2, "浦东新区": 1, "闵行区": 1, "海淀区": 1}  # j1/j2 无 district -> 未知
         counts = [i["count"] for i in res["items"]]
         assert counts == sorted(counts, reverse=True)
-        res2 = distribution_stats(s, base, city="北京")
-        by_key2 = {i["key"]: i["count"] for i in res2["items"]}
-        assert by_key2 == {"未知": 1, "海淀区": 1}
+
+
+def test_distribution_by_area(config):
+    _seed(config)
+    with SessionLocal() as s:
+        base = get_window_start(s)
+        s.add(Job(job_id="a1", title="t", city="上海", area="上海-长宁区", updated_at=base + timedelta(hours=5)))
+        s.add(Job(job_id="a2", title="t", city="上海", area="上海-浦东新区", updated_at=base + timedelta(hours=6)))
+        s.add(Job(job_id="a3", title="t", city="北京", area="北京-海淀区", updated_at=base + timedelta(hours=7)))
+        s.commit()
+        res = distribution_stats(s, base, group_by="area")
+        by_key = {i["key"]: i["count"] for i in res["items"]}
+        assert res["group_by"] == "area"
+        assert by_key == {"未知": 2, "上海-长宁区": 1, "上海-浦东新区": 1, "北京-海淀区": 1}
 
 
 def test_distribution_api(config):
@@ -113,10 +124,10 @@ def test_distribution_api(config):
         resp = c.get("/api/stats/distribution")
         assert resp.status_code == 200
         data = resp.json()
-        assert "city" in data and "items" in data
+        assert data["group_by"] == "city" and "items" in data
         assert {i["key"] for i in data["items"]} == {"上海", "北京"}
-        resp2 = c.get("/api/stats/distribution", params={"city": "上海"})
-        assert resp2.json()["city"] == "上海"
+        resp2 = c.get("/api/stats/distribution", params={"group_by": "district"})
+        assert resp2.json()["group_by"] == "district"
 
 
 def test_distribution_api_requires_auth(config):
