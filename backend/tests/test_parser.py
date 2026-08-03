@@ -35,6 +35,30 @@ def test_search_page_company_from_card():
     assert comp.type == "民营"
     assert comp.industry == "其他专业服务丨财务/审计/税务"
     assert comp.size == "5000-10000人"
+    # fixture 为旧版卡片结构，无"今日回复"tip
+    assert comp.activity is None
+
+
+def test_search_page_activity_from_card():
+    html = """
+    <div class="joblist-item">
+      <div class="joblist-item-job" sensorsdata='{"jobId":"A1","jobTitle":"测试","jobSalary":"1-2万","jobArea":"上海-黄浦区","companyId":"C9"}'>
+      </div>
+      <div class="joblist-item-jobinfo text-cut">
+        <span class="sal text-cut">1-2万</span>
+        <div class="area"><div class="shrink-0">上海·黄浦区</div></div>
+        <span class="tip shrink-0">今日回复8次</span>
+      </div>
+      <div class="joblist-item-tags"><div class="tags"><div class="tag">五险一金</div></div></div>
+      <a class="cname">测试公司</a>
+      <div class="bc"><div class="dc">软件</div><div class="dc" title="民营">民营</div><div class="dc">100-499人</div></div>
+    </div>
+    """
+    result = parse_search_page(html, page_num=1)
+    assert len(result.companies) == 1
+    comp = result.companies[0]
+    assert comp.company_id == "C9"
+    assert comp.activity == "今日回复8次"
 
 
 def test_search_page_tags_fallback():
