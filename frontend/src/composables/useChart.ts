@@ -3,7 +3,7 @@ import * as echarts from 'echarts'
 import type { EChartsOption } from 'echarts'
 
 export function useChart(el: Ref<HTMLElement | null>, option: Ref<EChartsOption>) {
-  const chart = ref<echarts.ECharts | null>(null)
+  const chart = ref<ReturnType<typeof echarts.init> | null>(null)
 
   onMounted(() => {
     if (!el.value) return
@@ -20,4 +20,6 @@ export function useChart(el: Ref<HTMLElement | null>, option: Ref<EChartsOption>
     window.removeEventListener('resize', onResize)
     chart.value?.dispose()
   })
+
+  return chart
 }
