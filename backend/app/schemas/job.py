@@ -13,6 +13,8 @@ class JobOut(BaseModel):
     city: str | None
     district: str | None
     area: str | None
+    degree: str | None
+    year: str | None
     tags: list[str]
     publish_time: datetime | None
     source: str

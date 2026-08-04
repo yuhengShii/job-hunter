@@ -98,6 +98,48 @@ def _migrate_companies_activity_score(engine) -> None:
     logger.info("迁移完成：companies 增加 activity_score 列并回填")
 
 
+def _migrate_jobs_degree_year(engine) -> None:
+    """轻量迁移：jobs 表增加 degree（学历）与 year（工作年限）列。
+
+    create_all 不会修改已有表，故对旧库做幂等 DDL；
+    历史行无数据可回填，置 NULL，由后续抓取补充。
+    """
+    insp = inspect(engine)
+    if "jobs" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("jobs")}
+    if "degree" in cols and "year" in cols:
+        return
+    with engine.begin() as conn:
+        if "degree" not in cols:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN degree VARCHAR(32)"))
+        if "year" not in cols:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN year VARCHAR(32)"))
+    logger.info("迁移完成：jobs 增加 degree/year 列")
+
+
+def _migrate_jobs_job_url(engine) -> None:
+    """轻量迁移：为缺失 job_url 的职位按 job_id 构造标准 51job 链接。
+
+    搜索卡片与 sensorsdata 均不含职位链接，按固定格式
+    https://jobs.51job.com/all/{job_id}.html 构造；幂等，可反复执行。
+    """
+    insp = inspect(engine)
+    if "jobs" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("jobs")}
+    if "job_url" not in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE jobs SET job_url = 'https://jobs.51job.com/all/' || job_id || '.html' "
+                "WHERE job_url IS NULL OR job_url = ''"
+            )
+        )
+    logger.info("迁移完成：回填缺失的 job_url")
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -107,3 +149,5 @@ def init_db(config: Config) -> None:
     Base.metadata.create_all(engine)
     _migrate_keywords_city(engine)
     _migrate_companies_activity_score(engine)
+    _migrate_jobs_degree_year(engine)
+    _migrate_jobs_job_url(engine)

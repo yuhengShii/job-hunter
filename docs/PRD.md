@@ -35,7 +35,7 @@
 - **users**：id, username, password_hash, created_at
 - **keywords**：id, keyword, city(51job 城市编码，000000=全国), enabled, scrape_mode(默认抓取方式), last_scraped_at, created_at —— **(keyword, city) 联合唯一**，同一岗位词可分别抓不同城市
 - **scrape_tasks**：id, keyword_id, mode, status(排队/进行中/成功/失败/部分成功), total_pages, total_found, success_count, failed_count, last_page(已抓到的最大页号), start_time, end_time, error_message, created_at
-- **jobs**（job_id 唯一，覆盖更新）：id, job_id, title, salary_raw, salary_min, salary_max, city, district, area, tags(JSON), publish_time, source, company_id, job_url, created_at, updated_at
+- **jobs**（job_id 唯一，覆盖更新）：id, job_id, title, salary_raw, salary_min, salary_max, city, district, area, degree(学历), year(工作年限), tags(JSON), publish_time, source, company_id, job_url, created_at, updated_at
 - **companies**（company_id 唯一）：id, company_id, name, type(民营/国企/外企), industry, size, activity, activity_score(0-10 活跃值，-1=未知，由 activity 文案按固定规则映射，规则见 §6), website, created_at, updated_at
 - **settings**：id, key(唯一), value(JSON), updated_at —— 存全局配置（如 schedule：频率、启停、目标关键字）
 
@@ -45,6 +45,7 @@
 - city 使用 51job 6 位城市编码（如 010000 北京 / 020000 上海 / 030200 广州 / 040000 深圳 / 080200 杭州 / 170200 郑州），000000 表示全国；前端维护编码表，后端仅存编码。
 - salary_raw 解析为 salary_min/max，规则枚举：`8千-1.2万`→8000/12000、`1.5-2万/月`→15000/20000、`15-20K`→15000/20000、`年薪20-30万`→按年折算、`面议`→NULL（统计时跳过），无法解析的格式记入 error 日志并置 NULL。
 - tags：优先取 sensorsdata 的 jobLabel，为空时走 DOM 兜底，仍无则存空数组。
+- degree/year：优先取 sensorsdata 的 jobDegree/jobYear，缺失时按卡片文本中"本科/大专/硕士…"与"N年及以上/N-M年…"关键词兜底，仍无则 NULL（历史数据无法回填，重抓后补齐）。
 - 公司详情字段（类型/行业/人数/活跃度）从 51job 公司信息处抓取，缺失时复用已抓取的同 company_id 信息。
 - activity 由搜索卡片 `.joblist-item-jobinfo .tip` 的全部文案（`、` 拼接）构成；activity_score 按固定规则映射（规则见 §6），多标签取各标签最高分，无法识别或为空记 -1。
 - `GET /api/jobs` 响应中携带 `company_activity_score`（0-10，-1 表示未知）。

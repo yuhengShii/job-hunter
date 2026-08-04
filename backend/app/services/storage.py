@@ -25,6 +25,8 @@ def upsert_jobs(db: Session, jobs: list[JobDraft]) -> int:
                     city=j.city,
                     district=j.district,
                     area=j.area,
+                    degree=j.degree,
+                    year=j.year,
                     tags=j.tags,
                     publish_time=j.publish_time,
                     company_id=j.company_id,
@@ -39,6 +41,8 @@ def upsert_jobs(db: Session, jobs: list[JobDraft]) -> int:
             existing.city = j.city
             existing.district = j.district
             existing.area = j.area
+            existing.degree = j.degree
+            existing.year = j.year
             existing.tags = j.tags
             existing.publish_time = j.publish_time
             existing.company_id = j.company_id

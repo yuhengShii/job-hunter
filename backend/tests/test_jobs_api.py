@@ -14,7 +14,7 @@ def client(config):
         ensure_admin(s, config)
         s.add_all([
             Company(company_id="c1", name="A公司", type="民营", industry="软件", size="100-499人", activity="今日回复8次", activity_score=8),
-            Job(job_id="j1", title="Python工程师", salary_min=10000, salary_max=20000, city="上海", district="长宁区", area="长宁区", tags=["急招"], company_id="c1"),
+            Job(job_id="j1", title="Python工程师", salary_min=10000, salary_max=20000, city="上海", district="长宁区", area="长宁区", degree="本科", year="3-4年", tags=["急招"], company_id="c1"),
             Job(job_id="j2", title="Java工程师", salary_min=15000, salary_max=25000, city="北京", tags=["高薪"], company_id="c1"),
             Job(job_id="j3", title="前端工程师", salary_min=None, salary_max=None, city="上海", tags=[], company_id="c1"),
         ])
@@ -64,6 +64,8 @@ def test_job_company_fields(client):
     assert data["company_name"] == "A公司"
     assert data["company_activity"] == "今日回复8次"
     assert data["company_activity_score"] == 8
+    assert data["degree"] == "本科"
+    assert data["year"] == "3-4年"
     resp2 = client.get("/api/jobs")
     first = resp2.json()["items"][0]
     assert first["company_name"] == "A公司"

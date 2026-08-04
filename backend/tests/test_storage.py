@@ -17,6 +17,22 @@ def test_upsert_jobs_updates_existing(config):
         assert job.tags == ["b"]
 
 
+def test_upsert_jobs_stores_degree_and_year(config):
+    init_db(config)
+    with SessionLocal() as s:
+        upsert_jobs(s, [JobDraft(job_id="j2", title="T", degree="本科", year="3-4年")])
+        s.commit()
+        job = s.query(Job).filter_by(job_id="j2").one()
+        assert job.degree == "本科"
+        assert job.year == "3-4年"
+    with SessionLocal() as s:
+        upsert_jobs(s, [JobDraft(job_id="j2", title="T2", degree="硕士", year="5-10年")])
+        s.commit()
+        job = s.query(Job).filter_by(job_id="j2").one()
+        assert job.degree == "硕士"
+        assert job.year == "5-10年"
+
+
 def test_upsert_companies_keeps_existing_fields(config):
     init_db(config)
     with SessionLocal() as s:

@@ -23,7 +23,7 @@ def test_search_page_parse_first_card():
     assert job.company_id == "2543553"
     assert job.tags == ["五险一金", "餐饮补贴", "带薪年假", "做五休二"]
     assert job.publish_time == datetime(2026, 4, 30, 16, 53, 19)
-    assert job.job_url is None
+    assert job.job_url == "https://jobs.51job.com/all/171875192.html"
 
 
 def test_search_page_company_from_card():
@@ -103,6 +103,52 @@ def test_search_page_activity_non_reply_tip():
     assert len(result.companies) == 1
     comp = result.companies[0]
     assert comp.activity == "1天内处理简历"
+
+
+def test_search_page_job_degree_and_year():
+    result = parse_search_page(SEARCH_HTML, page_num=1)
+    job = result.jobs[0]
+    assert job.degree == "本科"
+    assert job.year == "2年及以上"
+
+
+def test_search_page_degree_year_dom_fallback():
+    html = """
+    <div class="joblist-item">
+      <div class="joblist-item-job" sensorsdata='{"jobId":"A4","jobTitle":"测试","jobSalary":"1-2万","jobArea":"上海-黄浦区","companyId":"C12"}'>
+      </div>
+      <div class="joblist-item-jobinfo text-cut">
+        <span class="sal text-cut">1-2万</span>
+        <div class="area"><div class="shrink-0">上海·黄浦区</div></div>
+        <span class="tip shrink-0">大专 | 3-5年</span>
+      </div>
+      <div class="joblist-item-tags"><div class="tags"><div class="tag">五险一金</div></div></div>
+      <a class="cname">测试公司</a>
+      <div class="bc"><div class="dc">软件</div><div class="dc" title="民营">民营</div><div class="dc">100-499人</div></div>
+    </div>
+    """
+    result = parse_search_page(html, page_num=1)
+    job = result.jobs[0]
+    assert job.degree == "大专"
+    assert job.year == "3-5年"
+
+
+def test_search_page_job_url_constructed():
+    html = """
+    <div class="joblist-item">
+      <div class="joblist-item-job" sensorsdata='{"jobId":"A5","jobTitle":"测试","jobSalary":"1-2万","jobArea":"上海-黄浦区","companyId":"C13"}'>
+      </div>
+      <div class="joblist-item-jobinfo text-cut">
+        <span class="sal text-cut">1-2万</span>
+        <div class="area"><div class="shrink-0">上海·黄浦区</div></div>
+      </div>
+      <div class="joblist-item-tags"><div class="tags"><div class="tag">五险一金</div></div></div>
+      <a class="cname">测试公司</a>
+      <div class="bc"><div class="dc">软件</div><div class="dc" title="民营">民营</div><div class="dc">100-499人</div></div>
+    </div>
+    """
+    result = parse_search_page(html, page_num=1)
+    assert result.jobs[0].job_url == "https://jobs.51job.com/all/A5.html"
 
 
 def test_search_page_tags_fallback():

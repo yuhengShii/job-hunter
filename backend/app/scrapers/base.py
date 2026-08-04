@@ -14,6 +14,8 @@ class JobDraft:
     city: str | None = None
     district: str | None = None
     area: str | None = None
+    degree: str | None = None
+    year: str | None = None
     tags: list[str] = field(default_factory=list)
     publish_time: datetime | None = None
     company_id: str | None = None

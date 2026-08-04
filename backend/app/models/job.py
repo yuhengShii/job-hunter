@@ -19,6 +19,8 @@ class Job(Base):
     city: Mapped[str | None] = mapped_column(String(64))
     district: Mapped[str | None] = mapped_column(String(64))
     area: Mapped[str | None] = mapped_column(String(128))
+    degree: Mapped[str | None] = mapped_column(String(32))
+    year: Mapped[str | None] = mapped_column(String(32))
     tags: Mapped[list] = mapped_column(JSON, default=list)
     publish_time: Mapped[datetime | None] = mapped_column(DateTime)
     source: Mapped[str] = mapped_column(String(32), default="51job")

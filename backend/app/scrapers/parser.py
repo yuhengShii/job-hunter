@@ -19,6 +19,9 @@ _TYPE_MAP = {
     "外资(欧美)": "外企", "外资(非欧美)": "外企",
 }
 
+_RE_DEGREE = re.compile(r"(初中及以下|无学历要求|中技|中专|高中|大专|本科|硕士|博士)")
+_RE_YEAR = re.compile(r"(\d+-\d+年|\d+年及以上|\d+年以下|经验不限|应届生)")
+
 
 def _is_verification(html: str) -> bool:
     return any(m in html for m in _VERIFY_MARKERS)
@@ -59,6 +62,16 @@ def _extract_sensors(el) -> dict:
     except json.JSONDecodeError:
         logger.warning("sensorsdata JSON 解析失败")
         return {}
+
+
+def _fallback_degree(card) -> str | None:
+    m = _RE_DEGREE.search(card.get_text(" ", strip=True))
+    return m.group(1) if m else None
+
+
+def _fallback_year(card) -> str | None:
+    m = _RE_YEAR.search(card.get_text(" ", strip=True))
+    return m.group(1) if m else None
 
 
 def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
@@ -125,6 +138,8 @@ def parse_search_page(html: str, page_num: int) -> PageResult:
             card.select_one(".area").get_text(strip=True) if card.select_one(".area") else None
         )
         city, district = _split_area(area)
+        degree = sdata.get("jobDegree") or _fallback_degree(card)
+        year = sdata.get("jobYear") or _fallback_year(card)
         tags_raw = sdata.get("jobLabel")
         if not tags_raw:
             tags = [t.get_text(strip=True) for t in card.select(".joblist-item-tags .tag")]
@@ -143,10 +158,12 @@ def parse_search_page(html: str, page_num: int) -> PageResult:
                 city=city,
                 district=district,
                 area=area,
+                degree=degree,
+                year=year,
                 tags=tags,
                 publish_time=publish_time,
                 company_id=company_id,
-                job_url=None,
+                job_url=f"https://jobs.51job.com/all/{job_id}.html",
             )
         )
         comp = _parse_company_from_card(card, sdata)

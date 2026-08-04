@@ -74,3 +74,39 @@ def test_activity_score_migration_backfills(config):
         assert c1.activity_score == 10
         assert c2.activity_score == -1
         assert c3.activity_score == -1
+
+
+def test_degree_year_migration_adds_columns(config):
+    engine = create_engine(f"sqlite:///{config.db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE jobs (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    job_id VARCHAR(64) NOT NULL,
+                    title VARCHAR(255),
+                    salary_raw VARCHAR(64),
+                    salary_min INTEGER,
+                    salary_max INTEGER,
+                    city VARCHAR(64),
+                    district VARCHAR(64),
+                    area VARCHAR(128),
+                    tags JSON,
+                    publish_time DATETIME,
+                    source VARCHAR(32),
+                    company_id VARCHAR(64),
+                    job_url VARCHAR(512),
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+                """
+            )
+        )
+        conn.execute(text("INSERT INTO jobs (job_id, title) VALUES ('j1', '旧职位')"))
+    init_db(config)
+    with SessionLocal() as s:
+        job = s.query(Job).filter_by(job_id="j1").one()
+        assert job.degree is None
+        assert job.year is None
+        assert job.job_url == "https://jobs.51job.com/all/j1.html"

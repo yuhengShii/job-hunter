@@ -10,6 +10,8 @@ export interface JobOut {
   city: string | null
   district: string | null
   area: string | null
+  degree: string | null
+  year: string | null
   tags: string[]
   publish_time: string | null
   source: string

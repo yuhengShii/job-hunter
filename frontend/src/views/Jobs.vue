@@ -49,6 +49,12 @@
         <el-table-column label="薪资" width="130">
           <template #default="{ row }">{{ formatSalaryRaw(row.salary_raw) }}</template>
         </el-table-column>
+        <el-table-column label="学历" width="90">
+          <template #default="{ row }">{{ row.degree ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="工作年限" width="110">
+          <template #default="{ row }">{{ row.year ?? '-' }}</template>
+        </el-table-column>
         <el-table-column label="标签" min-width="180">
           <template #default="{ row }">
             <el-tag v-for="t in (row.tags ?? [])" :key="t" size="small" class="tag">{{ t }}</el-tag>
@@ -56,6 +62,12 @@
         </el-table-column>
         <el-table-column label="发布时间" width="150">
           <template #default="{ row }">{{ formatTime(row.publish_time) }}</template>
+        </el-table-column>
+        <el-table-column label="入库时间" width="150">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="更新时间" width="150">
+          <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
         </el-table-column>
       </el-table>
       <el-pagination
