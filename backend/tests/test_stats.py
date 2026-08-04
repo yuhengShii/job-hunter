@@ -6,7 +6,7 @@ from backend.app.api.deps import ensure_admin
 from backend.app.core.database import SessionLocal, init_db
 from backend.app.main import create_app
 from backend.app.models import Company, Job, Keyword, ScrapeTask, TaskStatus
-from backend.app.services.stats import get_window_start, overview, tag_stats, distribution_stats
+from backend.app.services.stats import get_window_start, overview, tag_stats, distribution_stats, trend_stats
 
 
 def _seed(config):
@@ -136,3 +136,71 @@ def test_distribution_api_requires_auth(config):
     with TestClient(app) as c:
         resp = c.get("/api/stats/distribution")
         assert resp.status_code == 401
+
+
+def test_trend_ungrouped_preserves_format(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        res = trend_stats(s, window)
+        assert res["group_by"] is None
+        assert "days" in res and "series" not in res
+        assert sum(d["count"] for d in res["days"]) == 2  # j1/j2 在窗口内
+
+
+def test_trend_grouped_by_city(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        res = trend_stats(s, window, group_by="city")
+        assert res["group_by"] == "city"
+        by_key = {s2["key"]: s2["points"] for s2 in res["series"]}
+        assert set(by_key) == {"上海", "北京"}
+        dates = [p["date"] for p in by_key["上海"]]
+        assert dates == sorted(dates)
+        assert sum(p["count"] for p in by_key["上海"]) == 1  # j1；j3 窗口外
+        assert sum(p["count"] for p in by_key["北京"]) == 1  # j2
+
+
+def test_trend_grouped_fills_missing_dates_with_zero(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        old_day = (window - timedelta(days=5)).date().isoformat()
+        new_day = (window + timedelta(days=1)).date().isoformat()
+        s.add(Job(job_id="t1", title="t", city="上海", updated_at=window - timedelta(days=5)))
+        s.add(Job(job_id="t2", title="t", city="北京", updated_at=window + timedelta(days=1)))
+        s.commit()
+        res = trend_stats(s, window - timedelta(days=10), group_by="city")
+        by_key = {s2["key"]: s2["points"] for s2 in res["series"]}
+        # 两个城市的日期序列完全一致（缺失补 0）
+        assert [p["date"] for p in by_key["上海"]] == [p["date"] for p in by_key["北京"]]
+        sh = {p["date"]: p["count"] for p in by_key["上海"]}
+        bj = {p["date"]: p["count"] for p in by_key["北京"]}
+        assert sh[old_day] == 1 and bj[old_day] == 0
+        assert bj[new_day] == 1 and sh[new_day] == 0
+
+
+def test_trend_grouped_unknown_fallback(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        res = trend_stats(s, window, group_by="district")
+        by_key = {s2["key"]: s2["points"] for s2 in res["series"]}
+        assert set(by_key) == {"未知"}  # j1/j2 均无 district
+        assert sum(p["count"] for p in by_key["未知"]) == 2
+
+
+def test_trend_api_group_by(config):
+    _seed(config)
+    app = create_app(config)
+    with TestClient(app) as c:
+        token = c.post("/api/auth/login", json={"username": config.auth_username, "password": config.auth_password}).json()["access_token"]
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        resp = c.get("/api/stats/trend")
+        assert resp.status_code == 200
+        assert resp.json()["group_by"] is None
+        resp2 = c.get("/api/stats/trend", params={"group_by": "city"})
+        data2 = resp2.json()
+        assert data2["group_by"] == "city"
+        assert {s["key"] for s in data2["series"]} == {"上海", "北京"}
