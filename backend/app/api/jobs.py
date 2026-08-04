@@ -23,6 +23,7 @@ def _with_company(jobs: list[Job], db) -> list[JobOut]:
         if c:
             item.company_name = c.name
             item.company_activity = c.activity
+            item.company_activity_score = c.activity_score
         out.append(item)
     return out
 

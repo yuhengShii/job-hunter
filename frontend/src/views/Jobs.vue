@@ -35,6 +35,11 @@
         <el-table-column label="活跃度" width="110">
           <template #default="{ row }">{{ row.company_activity ?? '-' }}</template>
         </el-table-column>
+        <el-table-column label="活跃值" width="90" align="center">
+          <template #default="{ row }">
+            <span :class="scoreClass(row.company_activity_score)">{{ row.company_activity_score ?? '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="城市" width="110">
           <template #default="{ row }">{{ row.city ?? '-' }}</template>
         </el-table-column>
@@ -145,6 +150,13 @@ async function openDetail(row: JobOut) {
   }
 }
 
+function scoreClass(score: number | undefined): string {
+  if (score == null || score < 0) return 'score-unknown'
+  if (score >= 8) return 'score-high'
+  if (score >= 5) return 'score-mid'
+  return 'score-low'
+}
+
 onMounted(load)
 </script>
 
@@ -153,4 +165,8 @@ onMounted(load)
 .pager { margin-top: 16px; justify-content: flex-end; }
 .sep { margin: 0 8px; color: var(--el-text-color-secondary); }
 .tag { margin-right: 4px; }
+.score-high { color: #f56c6c; font-weight: 600; }
+.score-mid { color: #e6a23c; font-weight: 600; }
+.score-low { color: #909399; }
+.score-unknown { color: #ffffff; }
 </style>

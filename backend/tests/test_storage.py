@@ -28,3 +28,31 @@ def test_upsert_companies_keeps_existing_fields(config):
         assert comp.type == "民营"
         assert comp.industry == "软件"
         assert comp.size == "100人"
+
+
+def test_upsert_companies_stores_activity_score(config):
+    init_db(config)
+    with SessionLocal() as s:
+        upsert_companies(s, [CompanyDraft(company_id="c2", name="B公司", activity="今日回复10+次")])
+        s.commit()
+        comp = s.query(Company).filter_by(company_id="c2").one()
+        assert comp.activity_score == 10
+    with SessionLocal() as s:
+        upsert_companies(s, [CompanyDraft(company_id="c2", name="B公司", activity="回复率高、5分钟前处理简历")])
+        s.commit()
+        comp = s.query(Company).filter_by(company_id="c2").one()
+        assert comp.activity_score == 8
+    with SessionLocal() as s:
+        upsert_companies(s, [CompanyDraft(company_id="c2", name="B公司", activity=None)])
+        s.commit()
+        comp = s.query(Company).filter_by(company_id="c2").one()
+        assert comp.activity_score == 8
+
+
+def test_upsert_companies_default_score_unknown(config):
+    init_db(config)
+    with SessionLocal() as s:
+        upsert_companies(s, [CompanyDraft(company_id="c3", name="C公司", activity=None)])
+        s.commit()
+        comp = s.query(Company).filter_by(company_id="c3").one()
+        assert comp.activity_score == -1

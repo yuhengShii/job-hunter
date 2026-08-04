@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.app.core.config import Config
+from backend.app.services.activity import score_activity
 
 logger = logging.getLogger("job_hunter")
 
@@ -70,6 +71,33 @@ def _migrate_keywords_city(engine) -> None:
     logger.info("迁移完成：keywords 增加 city 列，唯一约束改为 (keyword, city)")
 
 
+def _migrate_companies_activity_score(engine) -> None:
+    """轻量迁移：companies 表增加 activity_score 列（-1 表示未知）并按 activity 回填。
+
+    create_all 不会修改已有表，故对旧库做幂等 DDL：
+    缺列时 ALTER TABLE 补列，再按现有 activity 文案计算分数回填。
+    """
+    insp = inspect(engine)
+    if "companies" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("companies")}
+    if "activity_score" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE companies ADD COLUMN activity_score INTEGER NOT NULL DEFAULT -1")
+        )
+        rows = conn.execute(
+            text("SELECT id, activity FROM companies WHERE activity IS NOT NULL")
+        ).fetchall()
+        for row_id, activity in rows:
+            conn.execute(
+                text("UPDATE companies SET activity_score = :s WHERE id = :i"),
+                {"s": score_activity(activity), "i": row_id},
+            )
+    logger.info("迁移完成：companies 增加 activity_score 列并回填")
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -78,3 +106,4 @@ def init_db(config: Config) -> None:
 
     Base.metadata.create_all(engine)
     _migrate_keywords_city(engine)
+    _migrate_companies_activity_score(engine)

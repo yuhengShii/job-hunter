@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.models import Company, Job
 from backend.app.scrapers.base import CompanyDraft, JobDraft
+from backend.app.services.activity import score_activity
 
 logger = logging.getLogger("job_hunter")
 
@@ -61,6 +62,7 @@ def upsert_companies(db: Session, companies: list[CompanyDraft]) -> int:
                     industry=c.industry,
                     size=c.size,
                     activity=c.activity,
+                    activity_score=score_activity(c.activity),
                     website=c.website,
                 )
             )
@@ -75,6 +77,7 @@ def upsert_companies(db: Session, companies: list[CompanyDraft]) -> int:
                 existing.size = c.size
             if c.activity is not None:
                 existing.activity = c.activity
+                existing.activity_score = score_activity(c.activity)
             if c.website is not None:
                 existing.website = c.website
         count += 1

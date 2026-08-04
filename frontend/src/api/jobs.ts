@@ -16,6 +16,7 @@ export interface JobOut {
   company_id: string | null
   company_name?: string | null
   company_activity?: string | null
+  company_activity_score?: number
   job_url: string | null
   created_at: string
   updated_at: string

@@ -19,6 +19,7 @@ class JobOut(BaseModel):
     company_id: str | None
     company_name: str | None = None
     company_activity: str | None = None
+    company_activity_score: int = -1
     job_url: str | None
     created_at: datetime
     updated_at: datetime
