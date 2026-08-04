@@ -78,15 +78,19 @@ def _counts(values) -> list[dict]:
 def trend_stats(db: Session, window: datetime | None, days: int = 30, group_by: str | None = None) -> dict:
     start = window or datetime.now() - timedelta(days=days)
     jobs = db.query(Job).filter(Job.updated_at >= start).all()
+
+    def day_of(j: Job) -> str:
+        return (j.publish_time or j.updated_at).date().isoformat()
+
     if group_by is None:
         per_day: Counter = Counter()
         for j in jobs:
-            per_day[j.updated_at.date().isoformat()] += 1
+            per_day[day_of(j)] += 1
         return {"group_by": None, "days": [{"date": d, "count": n} for d, n in sorted(per_day.items())]}
     per_key: dict[str, Counter] = {}
     for j in jobs:
         key = getattr(j, group_by, None) or "未知"
-        per_key.setdefault(key, Counter())[j.updated_at.date().isoformat()] += 1
+        per_key.setdefault(key, Counter())[day_of(j)] += 1
     dates = sorted({d for c in per_key.values() for d in c})
     series = [
         {"key": k, "points": [{"date": d, "count": c.get(d, 0)} for d in dates]}

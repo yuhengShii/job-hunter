@@ -191,6 +191,21 @@ def test_trend_grouped_unknown_fallback(config):
         assert sum(p["count"] for p in by_key["未知"]) == 2
 
 
+def test_trend_uses_publish_time_when_present(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        s.add(Job(job_id="pt1", title="t", city="上海", updated_at=window + timedelta(hours=2),
+                  publish_time=window - timedelta(days=3)))
+        s.commit()
+        res = trend_stats(s, window)
+        by_day = {d["date"]: d["count"] for d in res["days"]}
+        # pt1 按 publish_time（3 天前）而非 updated_at（今天）归组
+        assert by_day.get((window - timedelta(days=3)).date().isoformat(), 0) == 1
+        # j1/j2 无 publish_time，回落 updated_at（当天）
+        assert by_day.get(window.date().isoformat(), 0) == 2
+
+
 def test_trend_api_group_by(config):
     _seed(config)
     app = create_app(config)
