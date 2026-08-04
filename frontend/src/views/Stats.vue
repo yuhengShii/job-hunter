@@ -254,7 +254,7 @@ const trendOption = computed<EChartsOption>(() => {
         orient: 'horizontal',
         left: 'center',
         bottom: 0,
-        inRange: { color: ['#ebedf0', '#c6e48b', '#7bc96f', '#239a3b'] },
+        inRange: { color: ['#ffebee', '#ffcdd2', '#ef9a9a', '#e57373', '#f44336', '#c62828'] },
         textStyle: { fontSize: 11 },
       },
       series: [
