@@ -79,12 +79,12 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
     else:
         type_raw = None
     size = dcs[2].get_text(strip=True) if len(dcs) > 2 else None
-    activity = None
-    for tip in card.select(".joblist-item-jobinfo .tip"):
-        text = tip.get_text(strip=True)
-        if "回复" in text:
-            activity = text
-            break
+    tips = [
+        tip.get_text(strip=True)
+        for tip in card.select(".joblist-item-jobinfo .tip")
+        if tip.get_text(strip=True)
+    ]
+    activity = "、".join(tips) if tips else None
     return CompanyDraft(
         company_id=company_id,
         name=name,
