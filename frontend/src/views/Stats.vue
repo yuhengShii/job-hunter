@@ -232,7 +232,7 @@ const trendOption = computed<EChartsOption>(() => {
     const data: [number, number, number][] = []
     seriesList.forEach((s, yi) => {
       s.points.forEach((p, xi) => {
-        data.push([xi, yi, p.count])
+        if (p.count > 0) data.push([xi, yi, p.count])
       })
     })
     const maxVal = Math.max(1, ...seriesList.flatMap((s) => s.points.map((p) => p.count)))
@@ -245,8 +245,8 @@ const trendOption = computed<EChartsOption>(() => {
         },
       },
       grid: { left: 110, right: 16, top: 24, bottom: 70 },
-      xAxis: { type: 'category', data: dates, splitArea: { show: true } },
-      yAxis: { type: 'category', data: keys, splitArea: { show: true }, axisLabel: { fontSize: 11 } },
+      xAxis: { type: 'category', data: dates },
+      yAxis: { type: 'category', data: keys, axisLabel: { fontSize: 11 } },
       visualMap: {
         min: 0,
         max: maxVal,
@@ -254,7 +254,7 @@ const trendOption = computed<EChartsOption>(() => {
         orient: 'horizontal',
         left: 'center',
         bottom: 0,
-        inRange: { color: ['#ffebee', '#ffcdd2', '#ef9a9a', '#e57373', '#f44336', '#c62828'] },
+        inRange: { color: ['#ffcdd2', '#ef9a9a', '#e57373', '#f44336', '#c62828'] },
         textStyle: { fontSize: 11 },
       },
       series: [
