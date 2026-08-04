@@ -94,7 +94,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref } from 'vue'
 import type { EChartsOption } from 'echarts'
-import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult } from '@/api/stats'
+import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult, type TrendSeries } from '@/api/stats'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
 
@@ -203,22 +203,67 @@ const pies = [
   { title: '规模分布', ref: setRef(sizeEl), collapsible: false },
 ]
 
+const TREND_TOP_N = 20
+
 const trendOption = computed<EChartsOption>(() => {
   const grouped = trend.value?.series
   if (grouped && grouped.length) {
-    const dates = grouped[0].points.map((p) => p.date)
+    const total = (s: TrendSeries) => s.points.reduce((a, p) => a + p.count, 0)
+    const sorted = [...grouped].sort((a, b) => total(b) - total(a))
+    const top = sorted.slice(0, TREND_TOP_N)
+    const rest = sorted.slice(TREND_TOP_N)
+    const keys = top.map((s) => s.key)
+    let seriesList = top
+    if (rest.length) {
+      const dates = (top[0]?.points ?? rest[0].points).map((p) => p.date)
+      seriesList = [
+        ...top,
+        {
+          key: '其他',
+          points: dates.map((d) => ({
+            date: d,
+            count: rest.reduce((s, it) => s + (it.points.find((p) => p.date === d)?.count ?? 0), 0),
+          })),
+        },
+      ]
+      keys.push('其他')
+    }
+    const dates = seriesList[0].points.map((p) => p.date)
+    const data: [number, number, number][] = []
+    seriesList.forEach((s, yi) => {
+      s.points.forEach((p, xi) => {
+        data.push([xi, yi, p.count])
+      })
+    })
+    const maxVal = Math.max(1, ...seriesList.flatMap((s) => s.points.map((p) => p.count)))
     return {
-      tooltip: { trigger: 'axis' },
-      legend: { type: 'scroll', bottom: 0, height: 80 },
-      grid: { left: 48, right: 24, top: 40, bottom: 120 },
-      xAxis: { type: 'category', data: dates },
-      yAxis: { type: 'value' },
-      series: grouped.map((s) => ({
-        type: 'line',
-        name: s.key,
-        smooth: true,
-        data: s.points.map((p) => p.count),
-      })),
+      tooltip: {
+        position: 'top',
+        formatter: (params: unknown) => {
+          const v = (params as { value: [number, number, number] }).value
+          return `${keys[v[1]]}<br/>${dates[v[0]]}：${v[2]} 个`
+        },
+      },
+      grid: { left: 110, right: 16, top: 24, bottom: 70 },
+      xAxis: { type: 'category', data: dates, splitArea: { show: true } },
+      yAxis: { type: 'category', data: keys, splitArea: { show: true }, axisLabel: { fontSize: 11 } },
+      visualMap: {
+        min: 0,
+        max: maxVal,
+        calculable: false,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 0,
+        inRange: { color: ['#ebedf0', '#c6e48b', '#7bc96f', '#239a3b'] },
+        textStyle: { fontSize: 11 },
+      },
+      series: [
+        {
+          type: 'heatmap',
+          data,
+          emphasis: { itemStyle: { borderColor: '#333', borderWidth: 1 } },
+        },
+      ],
     }
   }
   return {
