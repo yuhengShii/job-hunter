@@ -11,6 +11,7 @@
         <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="kw.keyword" :value="kw.id" />
       </el-select>
       <el-select v-model="groupBy" style="width: 140px; margin-left: 16px" @change="reload">
+        <el-option label="全部" value="all" />
         <el-option label="按城市" value="city" />
         <el-option label="按区域" value="district" />
         <el-option label="按地区" value="area" />
@@ -93,18 +94,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref } from 'vue'
 import type { EChartsOption } from 'echarts'
-import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult } from '@/api/stats'
+import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult, type TrendSeries } from '@/api/stats'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
 
 const keywordsStore = useKeywordsStore()
 const keywordId = ref<number | null>(null)
-const groupBy = ref<'city' | 'district' | 'area'>('city')
+const groupBy = ref<'all' | 'city' | 'district' | 'area'>('all')
 
 const overview = ref({ total_jobs: 0, total_cities: 0, total_companies: 0, salary_parsed: 0 })
 const salary = ref<SalaryStats | null>(null)
 const company = ref<CompanyStats | null>(null)
-const trend = ref<{ days: { date: string; count: number }[] } | null>(null)
+const trend = ref<TrendResult | null>(null)
 const tags = ref<{ tag: string; count: number }[]>([])
 const dist = ref<DistributionResult | null>(null)
 
@@ -202,13 +203,77 @@ const pies = [
   { title: '规模分布', ref: setRef(sizeEl), collapsible: false },
 ]
 
-const trendOption = computed<EChartsOption>(() => ({
-  tooltip: { trigger: 'axis' },
-  grid: { left: 48, right: 24, top: 40, bottom: 40 },
-  xAxis: { type: 'category', data: (trend.value?.days ?? []).map((d) => d.date) },
-  yAxis: { type: 'value' },
-  series: [{ type: 'line', smooth: true, areaStyle: {}, data: (trend.value?.days ?? []).map((d) => d.count) }],
-}))
+const TREND_TOP_N = 20
+
+const trendOption = computed<EChartsOption>(() => {
+  const grouped = trend.value?.series
+  if (grouped && grouped.length) {
+    const total = (s: TrendSeries) => s.points.reduce((a, p) => a + p.count, 0)
+    const sorted = [...grouped].sort((a, b) => total(b) - total(a))
+    const top = sorted.slice(0, TREND_TOP_N)
+    const rest = sorted.slice(TREND_TOP_N)
+    const keys = top.map((s) => s.key)
+    let seriesList = top
+    if (rest.length) {
+      const dates = (top[0]?.points ?? rest[0].points).map((p) => p.date)
+      seriesList = [
+        ...top,
+        {
+          key: '其他',
+          points: dates.map((d) => ({
+            date: d,
+            count: rest.reduce((s, it) => s + (it.points.find((p) => p.date === d)?.count ?? 0), 0),
+          })),
+        },
+      ]
+      keys.push('其他')
+    }
+    const dates = seriesList[0].points.map((p) => p.date)
+    const data: [number, number, number][] = []
+    seriesList.forEach((s, yi) => {
+      s.points.forEach((p, xi) => {
+        if (p.count > 0) data.push([xi, yi, p.count])
+      })
+    })
+    const maxVal = Math.max(1, ...seriesList.flatMap((s) => s.points.map((p) => p.count)))
+    return {
+      tooltip: {
+        position: 'top',
+        formatter: (params: unknown) => {
+          const v = (params as { value: [number, number, number] }).value
+          return `${keys[v[1]]}<br/>${dates[v[0]]}：${v[2]} 个`
+        },
+      },
+      grid: { left: 110, right: 16, top: 24, bottom: 70 },
+      xAxis: { type: 'category', data: dates },
+      yAxis: { type: 'category', data: keys, axisLabel: { fontSize: 11 } },
+      visualMap: {
+        min: 0,
+        max: maxVal,
+        calculable: false,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 0,
+        inRange: { color: ['#ffcdd2', '#ef9a9a', '#e57373', '#f44336', '#c62828'] },
+        textStyle: { fontSize: 11 },
+      },
+      series: [
+        {
+          type: 'heatmap',
+          data,
+          emphasis: { itemStyle: { borderColor: '#333', borderWidth: 1 } },
+        },
+      ],
+    }
+  }
+  return {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 48, right: 24, top: 40, bottom: 40 },
+    xAxis: { type: 'category', data: (trend.value?.days ?? []).map((d) => d.date) },
+    yAxis: { type: 'value' },
+    series: [{ type: 'line', smooth: true, areaStyle: {}, data: (trend.value?.days ?? []).map((d) => d.count) }],
+  }
+})
 
 const tagsOption = computed<EChartsOption>(() => ({
   tooltip: { trigger: 'axis' },
@@ -239,13 +304,15 @@ let statsSeq = 0
 async function reload() {
   const seq = ++statsSeq
   const kw = keywordId.value
+  const gb = groupBy.value === 'all' ? 'city' : groupBy.value
+  const trendGb = groupBy.value === 'all' ? undefined : groupBy.value
   const [ov, sa, co, tr, ta, di] = await Promise.all([
     statsApi.overview(kw),
-    statsApi.salary(kw, groupBy.value),
+    statsApi.salary(kw, gb),
     statsApi.company(kw),
-    statsApi.trend(kw, 30),
+    statsApi.trend(kw, 30, trendGb),
     statsApi.tags(kw, 10),
-    statsApi.distribution(kw, groupBy.value),
+    statsApi.distribution(kw, gb),
   ])
   if (seq !== statsSeq) return
   overview.value = ov

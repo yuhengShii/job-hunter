@@ -25,9 +25,9 @@ def get_company(keyword_id: int | None = None, db=Depends(get_db), user=Depends(
 
 
 @stats_router.get("/trend")
-def get_trend(keyword_id: int | None = None, days: int = 30, db=Depends(get_db), user=Depends(get_current_user)):
+def get_trend(keyword_id: int | None = None, days: int = 30, group_by: str | None = None, db=Depends(get_db), user=Depends(get_current_user)):
     window = stats_service.get_window_start(db, keyword_id)
-    return stats_service.trend_stats(db, window, days=days)
+    return stats_service.trend_stats(db, window, days=days, group_by=group_by)
 
 
 @stats_router.get("/tags")

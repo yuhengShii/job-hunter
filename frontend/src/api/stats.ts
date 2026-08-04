@@ -32,8 +32,20 @@ export interface CompanyStats {
   size: CountItem[]
 }
 
+export interface TrendPoint {
+  date: string
+  count: number
+}
+
+export interface TrendSeries {
+  key: string
+  points: TrendPoint[]
+}
+
 export interface TrendResult {
-  days: { date: string; count: number }[]
+  group_by?: string | null
+  days?: TrendPoint[]
+  series?: TrendSeries[]
 }
 
 export interface TagItem {
@@ -58,8 +70,8 @@ export const statsApi = {
     http.get<SalaryStats>('/stats/salary', { params: { keyword_id, group_by } }).then((r) => r.data),
   company: (keyword_id?: number | null) =>
     http.get<CompanyStats>('/stats/company', { params: { keyword_id } }).then((r) => r.data),
-  trend: (keyword_id?: number | null, days = 30) =>
-    http.get<TrendResult>('/stats/trend', { params: { keyword_id, days } }).then((r) => r.data),
+  trend: (keyword_id?: number | null, days = 30, group_by?: string | null) =>
+    http.get<TrendResult>('/stats/trend', { params: { keyword_id, days, group_by } }).then((r) => r.data),
   tags: (keyword_id?: number | null, top_n = 10) =>
     http.get<TagItem[]>('/stats/tags', { params: { keyword_id, top_n } }).then((r) => r.data),
   distribution: (keyword_id?: number | null, group_by = 'city') =>
