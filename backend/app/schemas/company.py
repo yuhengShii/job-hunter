@@ -11,7 +11,6 @@ class CompanyOut(BaseModel):
     industry: str | None
     size: str | None
     activity: str | None
-    website: str | None
     created_at: datetime
     updated_at: datetime
 

@@ -1,11 +1,10 @@
 from pathlib import Path
 from datetime import datetime
 
-from backend.app.scrapers.parser import parse_company_page, parse_search_page
+from backend.app.scrapers.parser import parse_search_page
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SEARCH_HTML = (FIXTURES / "51job_search.html").read_text(encoding="utf-8")
-COMPANY_HTML = (FIXTURES / "51job_company.html").read_text(encoding="utf-8")
 
 
 def test_search_page_parse_first_card():
@@ -37,8 +36,6 @@ def test_search_page_company_from_card():
     assert comp.size == "5000-10000人"
     # fixture 卡片 tip 为"简历处理快"（不含"回复"二字，旧逻辑会漏抓）
     assert comp.activity == "简历处理快"
-    # 公司详情页链接来自卡片 a.comp 的 href
-    assert comp.company_url == "https://jobs.51job.com/all/coUjYFZF45AD0EZFQyAGY.html"
 
 
 def test_search_page_activity_from_card():
@@ -194,20 +191,6 @@ def test_empty_page_not_blocked():
     result = parse_search_page(html, page_num=1)
     assert result.failed is True
     assert result.blocked is False
-
-
-def test_company_page_synthetic():
-    comp = parse_company_page(COMPANY_HTML)
-    assert comp is not None
-    assert comp.name == "示例科技"
-    assert comp.type == "民营"
-    assert comp.industry == "计算机软件"
-    assert comp.size == "500-1000人"
-    assert comp.activity == "30天"
-
-
-def test_company_page_verification_returns_none():
-    assert parse_company_page("<html><body>安全验证</body></html>") is None
 
 
 def test_search_page_card_with_single_dc_cell():

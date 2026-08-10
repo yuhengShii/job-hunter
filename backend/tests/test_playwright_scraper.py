@@ -17,7 +17,6 @@ def test_playwright_scraper_implements_interface():
 def test_scraper_is_async_generator():
     s = PlaywrightScraper(headful=False)
     assert inspect.isasyncgenfunction(s.search)
-    assert inspect.iscoroutinefunction(s.fetch_company)
     assert inspect.iscoroutinefunction(s.close)
 
 

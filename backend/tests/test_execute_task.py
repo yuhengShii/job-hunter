@@ -13,7 +13,6 @@ class FakeScraper:
         self.pages_arg: int | None = None
         self.area_arg: str | None = None
         self.keyword_arg: str | None = None
-        self.company_fetches: list[tuple[str, str]] = []
         self.search_results: list[PageResult] = []
         self.raise_on_search: Exception | None = None
 
@@ -25,10 +24,6 @@ class FakeScraper:
             raise self.raise_on_search
         for r in self.search_results:
             yield r
-
-    async def fetch_company(self, company_id, company_url):
-        self.company_fetches.append((company_id, company_url))
-        return CompanyDraft(company_id=company_id, website="https://www.example.com")
 
     async def close(self):
         pass
@@ -57,7 +52,7 @@ def test_execute_task_success(config, monkeypatch):
         PageResult(
             page_num=1,
             jobs=[JobDraft(job_id="j1", title="t1", company_id="c1", salary_min=1000, salary_max=2000)],
-            companies=[CompanyDraft(company_id="c1", name="A公司", company_url="https://jobs.51job.com/all/coX.html")],
+            companies=[CompanyDraft(company_id="c1", name="A公司")],
             total_pages=2,
         ),
         PageResult(page_num=2, jobs=[JobDraft(job_id="j2", title="t2", company_id="c1")]),
@@ -76,14 +71,11 @@ def test_execute_task_success(config, monkeypatch):
         assert t.end_time is not None
         assert s.query(Job).count() == 2
         comp = s.query(Company).filter_by(company_id="c1").one()
-        # 搜索卡片已给 name，公司详情页补 website
         assert comp.name == "A公司"
-        assert comp.website == "https://www.example.com"
         assert s.get(Keyword, kw_id).last_scraped_at is not None
     assert fake.pages_arg == 2
     assert fake.area_arg == "000000"
     assert fake.keyword_arg == "python"
-    assert len(fake.company_fetches) == 1
 
 
 def test_execute_task_default_max_pages(config, monkeypatch):
@@ -126,22 +118,3 @@ def test_execute_task_exception_marks_failed(config, monkeypatch):
         assert t.status == TaskStatus.FAILED.value
         assert "boom" in (t.error_message or "")
         assert t.end_time is not None
-
-
-def test_company_detail_skipped_when_website_filled(config, monkeypatch):
-    init_db(config)
-    fake = FakeScraper()
-    fake.search_results = [
-        PageResult(
-            page_num=1,
-            jobs=[JobDraft(job_id="j1", title="t1", company_id="c1")],
-            companies=[CompanyDraft(company_id="c1", name="A公司", company_url="https://jobs.51job.com/all/coX.html")],
-        )
-    ]
-    _patch(monkeypatch, fake, config)
-    with SessionLocal() as s:
-        s.add(Company(company_id="c1", name="A公司", website="https://already.example.com"))
-        s.commit()
-    task_id, _ = _seed_task(config.db_path)
-    asyncio.run(task_runner.execute_task(task_id))
-    assert fake.company_fetches == []

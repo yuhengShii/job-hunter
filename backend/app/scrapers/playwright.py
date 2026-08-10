@@ -7,9 +7,9 @@ from urllib.parse import quote
 from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
-from backend.app.scrapers.base import CompanyDraft, PageResult, Scraper
+from backend.app.scrapers.base import PageResult, Scraper
 from backend.app.scrapers.captcha import solve_aliyun_captcha
-from backend.app.scrapers.parser import parse_company_page, parse_search_page
+from backend.app.scrapers.parser import parse_search_page
 
 logger = logging.getLogger("job_hunter")
 
@@ -200,25 +200,6 @@ class PlaywrightScraper(Scraper):
         if last_result is None:
             return PageResult(page_num=page_num, jobs=[], failed=True), page
         return last_result, page
-
-    async def fetch_company(self, company_id: str, company_url: str) -> CompanyDraft | None:
-        if not company_url:
-            return None
-        await self._ensure_browser()
-        page = await self._new_page()
-        try:
-            await page.goto(company_url, wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(5000)
-            html = await page.content()
-            draft = parse_company_page(html)
-            if draft:
-                draft.company_id = company_id
-            return draft
-        except Exception as exc:
-            logger.warning("公司详情抓取失败 company_id=%s: %s", company_id, exc)
-            return None
-        finally:
-            await page.close()
 
     async def close(self) -> None:
         if self._context:

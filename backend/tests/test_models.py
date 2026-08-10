@@ -51,7 +51,6 @@ def test_activity_score_migration_backfills(config):
                     industry VARCHAR(128),
                     size VARCHAR(64),
                     activity VARCHAR(64),
-                    website VARCHAR(255),
                     created_at DATETIME,
                     updated_at DATETIME
                 )

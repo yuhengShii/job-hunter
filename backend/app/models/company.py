@@ -17,6 +17,5 @@ class Company(Base):
     size: Mapped[str | None] = mapped_column(String(64))
     activity: Mapped[str | None] = mapped_column(String(64))
     activity_score: Mapped[int] = mapped_column(Integer, default=-1, server_default="-1")
-    website: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

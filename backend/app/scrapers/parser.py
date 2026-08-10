@@ -98,8 +98,6 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
         if tip.get_text(strip=True)
     ]
     activity = "、".join(tips) if tips else None
-    comp_link = card.select_one("a.comp")
-    company_url = comp_link.get("href") if comp_link else None
     return CompanyDraft(
         company_id=company_id,
         name=name,
@@ -107,7 +105,6 @@ def _parse_company_from_card(card, sdata: dict) -> CompanyDraft | None:
         industry=industry,
         size=size,
         activity=activity,
-        company_url=company_url,
     )
 
 
@@ -181,35 +178,3 @@ def parse_search_page(html: str, page_num: int) -> PageResult:
         except ValueError:
             total_pages = None
     return PageResult(page_num=page_num, jobs=jobs, companies=companies, total_pages=total_pages)
-
-
-def _company_website(pairs: dict[str, str]) -> str | None:
-    for key in ("公司网址", "公司网站", "公司主页"):
-        if key in pairs and pairs[key]:
-            return pairs[key]
-    return None
-
-
-def parse_company_page(html: str) -> CompanyDraft | None:
-    if _is_verification(html):
-        return None
-    soup = BeautifulSoup(html, "html.parser")
-    info = soup.select_one(".company-info")
-    if not info:
-        return None
-    name_el = info.select_one("h1")
-    pairs: dict[str, str] = {}
-    for t1, t2 in zip(info.select(".t1"), info.select(".t2")):
-        link = t2.select_one("a")
-        pairs[t1.get_text(strip=True)] = (
-            link.get("href") if link and link.get("href") else t2.get_text(strip=True)
-        )
-    return CompanyDraft(
-        company_id="",
-        name=name_el.get_text(strip=True) if name_el else None,
-        type=pairs.get("公司类型"),
-        industry=pairs.get("所属行业"),
-        size=pairs.get("公司规模"),
-        activity=pairs.get("活跃天数"),
-        website=_company_website(pairs),
-    )

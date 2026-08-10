@@ -30,8 +30,6 @@ class CompanyDraft:
     industry: str | None = None
     size: str | None = None
     activity: str | None = None
-    website: str | None = None
-    company_url: str | None = None
 
 
 @dataclass
@@ -51,10 +49,6 @@ class Scraper(ABC):
         self, keyword: str, pages: int, area: str = "000000"
     ) -> AsyncGenerator[PageResult, None]:
         """按关键字搜索职位。area 为 51job 城市编码（000000 = 全国）。"""
-        ...
-
-    @abstractmethod
-    async def fetch_company(self, company_id: str, company_url: str) -> CompanyDraft | None:
         ...
 
     @abstractmethod

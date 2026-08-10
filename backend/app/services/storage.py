@@ -67,7 +67,6 @@ def upsert_companies(db: Session, companies: list[CompanyDraft]) -> int:
                     size=c.size,
                     activity=c.activity,
                     activity_score=score_activity(c.activity),
-                    website=c.website,
                 )
             )
         else:
@@ -82,8 +81,6 @@ def upsert_companies(db: Session, companies: list[CompanyDraft]) -> int:
             if c.activity is not None:
                 existing.activity = c.activity
                 existing.activity_score = score_activity(c.activity)
-            if c.website is not None:
-                existing.website = c.website
         count += 1
     db.commit()
     return count

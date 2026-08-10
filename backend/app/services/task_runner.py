@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import random
 import threading
 import time
 from datetime import datetime
@@ -9,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import REPO_ROOT, Config
 from backend.app.core.database import SessionLocal
-from backend.app.models import Company, Keyword, ScrapeTask, TaskStatus
+from backend.app.models import Keyword, ScrapeTask, TaskStatus
 from backend.app.scrapers.playwright import PlaywrightScraper
 from backend.app.services.storage import upsert_companies, upsert_jobs
 
@@ -50,30 +49,6 @@ def _claim_next_task(db: Session) -> ScrapeTask | None:
     return task
 
 
-async def _fetch_missing_company_details(scraper, company_urls: dict[str, str]) -> None:
-    """公司详情页补抓：仅补 website 为空（卡片不提供、从未抓成）的公司，PRD §6。"""
-    if not company_urls:
-        return
-    with SessionLocal() as db:
-        missing = {
-            cid: url
-            for cid, url in company_urls.items()
-            if db.query(Company)
-            .filter(Company.company_id == cid, Company.website.is_(None))
-            .first()
-        }
-    for cid, url in missing.items():
-        try:
-            draft = await scraper.fetch_company(cid, url)
-            if draft:
-                with SessionLocal() as db:
-                    upsert_companies(db, [draft])
-                    logger.info("公司详情已入库 company_id=%s", cid)
-        except Exception:
-            logger.exception("公司详情补抓异常 company_id=%s", cid)
-        await asyncio.sleep(random.uniform(3.0, 8.0))
-
-
 async def execute_task(task_id: int) -> None:
     with SessionLocal() as db:
         task = db.get(ScrapeTask, task_id)
@@ -85,7 +60,6 @@ async def execute_task(task_id: int) -> None:
     # per-task max_pages 优先（创建时已校验 ≤ 全局上限），默认取全局上限
     max_pages = min(task_max_pages, cfg.max_pages) if task_max_pages else cfg.max_pages
     scraper = PlaywrightScraper(headful=cfg.headful)
-    company_urls: dict[str, str] = {}
     try:
         first_page = True
         async for result in scraper.search(kw_text, max_pages, area=kw_area):
@@ -98,15 +72,11 @@ async def execute_task(task_id: int) -> None:
                     upsert_jobs(db, result.jobs)
                     upsert_companies(db, result.companies)
                     task.total_found += len(result.jobs)
-                    for c in result.companies:
-                        if c.company_url:
-                            company_urls.setdefault(c.company_id, c.company_url)
                 task.last_page = result.page_num
                 if first_page and result.total_pages:
                     task.total_pages = result.total_pages
                     first_page = False
                 db.commit()
-        await _fetch_missing_company_details(scraper, company_urls)
     except Exception as exc:
         logger.exception("任务执行异常 task_id=%s", task_id)
         with SessionLocal() as db:

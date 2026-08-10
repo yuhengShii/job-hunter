@@ -153,6 +153,19 @@ def _migrate_tasks_max_pages(engine) -> None:
     logger.info("迁移完成：scrape_tasks 增加 max_pages 列")
 
 
+def _migrate_companies_drop_website(engine) -> None:
+    """轻量迁移：companies 表删除 website 列（公司网址不再抓取，PRD §4 已移除）。"""
+    insp = inspect(engine)
+    if "companies" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("companies")}
+    if "website" not in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE companies DROP COLUMN website"))
+    logger.info("迁移完成：companies 删除 website 列")
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -165,3 +178,4 @@ def init_db(config: Config) -> None:
     _migrate_jobs_degree_year(engine)
     _migrate_jobs_job_url(engine)
     _migrate_tasks_max_pages(engine)
+    _migrate_companies_drop_website(engine)

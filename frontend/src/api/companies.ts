@@ -8,7 +8,6 @@ export interface CompanyOut {
   industry: string | null
   size: string | null
   activity: string | null
-  website: string | null
   created_at: string
   updated_at: string
 }

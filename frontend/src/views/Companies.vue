@@ -31,12 +31,6 @@
         <el-table-column label="活跃度" width="100">
           <template #default="{ row }">{{ row.activity ?? '-' }}</template>
         </el-table-column>
-        <el-table-column label="网址" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <el-link v-if="row.website" :href="row.website" target="_blank">{{ row.website }}</el-link>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
         <el-table-column label="更新时间" width="150">
           <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
         </el-table-column>
