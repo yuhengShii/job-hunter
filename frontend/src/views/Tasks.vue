@@ -46,7 +46,8 @@
               </el-select>
             </el-form-item>
             <el-form-item label="最大页数">
-              <el-input-number v-model="taskForm.max_pages" :min="1" :max="1000" placeholder="留空用默认" />
+              <el-input-number v-model="taskForm.max_pages" :min="1" :max="scraperConfig.max_pages" placeholder="留空用默认" />
+              <span class="form-hint">留空 = 全局上限 {{ scraperConfig.max_pages }} 页</span>
             </el-form-item>
             <el-form-item>
               <el-button type="primary" :loading="creating" @click="createTask">创建任务</el-button>
@@ -155,6 +156,7 @@ const tasks = ref<TaskOut[]>([])
 const tasksLoading = ref(false)
 const creating = ref(false)
 const schedule = ref<ScheduleOut>({ enabled: false, interval_minutes: 60, keyword_ids: [] })
+const scraperConfig = ref({ max_pages: 50 })
 
 const taskForm = reactive<{ keyword_id: number | null; mode: string; max_pages: number | null }>({
   keyword_id: null,
@@ -174,7 +176,7 @@ const keywordDialog = reactive({
 let pollTimer: number | undefined
 
 function keywordName(id: number): string {
-  return keywordsStore.list.find((k) => k.id === id)?.keyword ?? `#${id}`
+  return keywordsStore.list.find((k) => k.id === id)?.keyword ?? '（已删除）'
 }
 
 function progressPct(row: TaskOut): number {
@@ -193,6 +195,10 @@ async function loadTasks() {
 
 async function loadSchedule() {
   schedule.value = await settingsApi.getSchedule()
+}
+
+async function loadScraperConfig() {
+  scraperConfig.value = await settingsApi.getScraperConfig()
 }
 
 async function saveSchedule() {
@@ -309,7 +315,7 @@ async function removeKeyword(row: KeywordOut) {
 
 onMounted(async () => {
   try {
-    await Promise.all([keywordsStore.fetch(), loadTasks(), loadSchedule()])
+    await Promise.all([keywordsStore.fetch(), loadTasks(), loadSchedule(), loadScraperConfig()])
   } catch {
     // 拦截器已提示
   }
@@ -332,4 +338,5 @@ onUnmounted(() => {
 <style scoped>
 .section-card { margin-bottom: 16px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
+.form-hint { margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

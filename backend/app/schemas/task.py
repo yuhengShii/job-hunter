@@ -13,6 +13,7 @@ class TaskOut(BaseModel):
     id: int
     keyword_id: int
     mode: str
+    max_pages: int | None
     status: str
     total_pages: int | None
     total_found: int

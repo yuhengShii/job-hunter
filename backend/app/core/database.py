@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.app.core.config import Config
@@ -9,8 +9,8 @@ from backend.app.services.activity import score_activity
 
 logger = logging.getLogger("job_hunter")
 
-engine: object = None
-SessionLocal: sessionmaker = sessionmaker(autoflush=False, expire_on_commit=False)
+engine: Engine | None = None
+SessionLocal: sessionmaker[Session] = sessionmaker(autoflush=False, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -140,6 +140,19 @@ def _migrate_jobs_job_url(engine) -> None:
     logger.info("迁移完成：回填缺失的 job_url")
 
 
+def _migrate_tasks_max_pages(engine) -> None:
+    """轻量迁移：scrape_tasks 表增加 max_pages 列（per-task 页数上限，NULL=全局上限）。"""
+    insp = inspect(engine)
+    if "scrape_tasks" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("scrape_tasks")}
+    if "max_pages" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE scrape_tasks ADD COLUMN max_pages INTEGER"))
+    logger.info("迁移完成：scrape_tasks 增加 max_pages 列")
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -151,3 +164,4 @@ def init_db(config: Config) -> None:
     _migrate_companies_activity_score(engine)
     _migrate_jobs_degree_year(engine)
     _migrate_jobs_job_url(engine)
+    _migrate_tasks_max_pages(engine)

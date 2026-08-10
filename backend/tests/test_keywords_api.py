@@ -69,6 +69,25 @@ def test_keyword_unique_by_keyword_and_city(client):
     assert resp.json()["city"] == "080200"
 
 
+def test_keyword_delete_blocked_by_running_task(client):
+    from backend.app.models import ScrapeTask
+
+    kid = client.post("/api/keywords", json={"keyword": "python"}).json()["id"]
+    tid = client.post("/api/tasks", json={"keyword_id": kid}).json()["id"]
+    with SessionLocal() as s:
+        t = s.get(ScrapeTask, tid)
+        t.status = "in_progress"
+        s.commit()
+    resp = client.delete(f"/api/keywords/{kid}")
+    assert resp.status_code == 400
+    # 任务结束后可删除
+    with SessionLocal() as s:
+        t = s.get(ScrapeTask, tid)
+        t.status = "success"
+        s.commit()
+    assert client.delete(f"/api/keywords/{kid}").status_code == 200
+
+
 def test_keyword_requires_auth(config):
     init_db(config)
     with SessionLocal() as s:

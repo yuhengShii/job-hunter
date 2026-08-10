@@ -23,7 +23,8 @@
 - pytest；解析类测试使用 `backend/tests/fixtures/` 的本地 HTML，禁止在测试中访问真实 51job。
 - 覆盖：薪资解析、去重 upsert、统计聚合边界、API（TestClient）。
 
-## 前端（frontend/，尚未搭建）
+## 前端（frontend/）
 
-- Vue3 `<script setup>` 组合式 API；页面在 `src/views/`，状态在 `src/stores/`（Pinia），请求封装在 `src/api/`。
+- Vue3 `<script setup>` 组合式 API；页面在 `src/views/`，状态在 `src/stores/`（Pinia），请求封装在 `src/api/`；npm scripts：dev/build/type-check/test。
 - API 调用统一带 JWT；组件不直接发请求，走 `api/` 封装。
+- 组件不再需要的数据源（如公司名已随详情接口返回）不要重复拉全量表。

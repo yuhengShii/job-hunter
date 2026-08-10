@@ -23,3 +23,9 @@ def test_live_formats():
 def test_unparseable_returns_none():
     assert parse_salary("按天结算") == (None, None)
     assert parse_salary("") == (None, None)
+
+
+def test_mixed_unit_lo_below_1_returns_none():
+    # 意图锁定：PRD §4 未枚举"0.8-1.2万"这类小数值格式，lo<1 守卫使其记日志并置 NULL
+    assert parse_salary("0.8-1.2万") == (None, None)
+    assert parse_salary("0.5-1万") == (None, None)

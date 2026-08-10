@@ -30,6 +30,18 @@ def test_create_scheduled_tasks(config):
         assert s.query(ScrapeTask).count() == 3
 
 
+def test_create_scheduled_tasks_skips_disabled_keywords(config):
+    init_db(config)
+    with SessionLocal() as s:
+        k1 = Keyword(keyword="a", enabled=True)
+        k2 = Keyword(keyword="b", enabled=False)
+        s.add_all([k1, k2])
+        s.commit()
+        create_scheduled_tasks([k1.id, k2.id])
+        tasks = s.query(ScrapeTask).all()
+        assert [t.keyword_id for t in tasks] == [k1.id]
+
+
 def test_put_schedule_reapplies_active_scheduler(config):
     from backend.app.api.deps import ensure_admin
 

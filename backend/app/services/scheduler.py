@@ -4,7 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.app.core.database import SessionLocal
-from backend.app.models import ScrapeTask, Setting, TaskStatus
+from backend.app.models import Keyword, ScrapeTask, Setting, TaskStatus
 
 logger = logging.getLogger("job_hunter")
 
@@ -21,7 +21,16 @@ def create_scheduled_tasks(keyword_ids: list[int]) -> int:
                 ScrapeTask.status.in_([TaskStatus.QUEUED.value, TaskStatus.IN_PROGRESS.value])
             )
         }
-        for kid in keyword_ids:
+        enabled_ids = {
+            kid
+            for (kid,) in db.query(Keyword.id).filter(
+                Keyword.id.in_(keyword_ids), Keyword.enabled.is_(True)
+            )
+        }
+        skipped = set(keyword_ids) - enabled_ids
+        if skipped:
+            logger.info("已停用的关键字跳过定时抓取: %s", skipped)
+        for kid in enabled_ids:
             if kid in running:
                 continue
             db.add(ScrapeTask(keyword_id=kid, status=TaskStatus.QUEUED.value))

@@ -6,7 +6,14 @@ from backend.app.api.deps import ensure_admin
 from backend.app.core.database import SessionLocal, init_db
 from backend.app.main import create_app
 from backend.app.models import Company, Job, Keyword, ScrapeTask, TaskStatus
-from backend.app.services.stats import get_window_start, overview, tag_stats, distribution_stats, trend_stats
+from backend.app.services.stats import (
+    get_window_start,
+    overview,
+    salary_stats,
+    tag_stats,
+    distribution_stats,
+    trend_stats,
+)
 
 
 def _seed(config):
@@ -70,6 +77,23 @@ def test_distribution_by_city(config):
         by_key = {i["key"]: i["count"] for i in res["items"]}
         assert res["group_by"] == "city"
         assert by_key == {"上海": 1, "北京": 1}
+
+
+def test_salary_median_even_sample(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        base = datetime.now()
+        s.add(Job(job_id="m1", title="t", salary_min=10000, salary_max=10000, city="测试城", updated_at=base))
+        s.add(Job(job_id="m2", title="t", salary_min=30000, salary_max=30000, city="测试城", updated_at=base))
+        s.add(Job(job_id="m3", title="t", salary_min=50000, salary_max=50000, city="测试城", updated_at=base))
+        s.add(Job(job_id="m4", title="t", salary_min=70000, salary_max=70000, city="测试城", updated_at=base))
+        s.commit()
+        res = salary_stats(s, window - timedelta(days=1), group_by="city")
+        item = next(i for i in res["items"] if i["key"] == "测试城")
+        # 4 个样本：中位数 = (30000+50000)/2
+        assert item["count"] == 4
+        assert item["median"] == 40000
 
 
 def test_distribution_window_filter(config):

@@ -1,4 +1,3 @@
-from fastapi.routing import _IncludedRouter
 from fastapi.testclient import TestClient
 
 from backend.app.core.database import SessionLocal, init_db
@@ -9,9 +8,10 @@ from backend.app.models import Keyword, ScrapeTask, TaskStatus
 def _route_paths(app):
     paths = set()
     for r in app.routes:
-        if isinstance(r, _IncludedRouter):
-            paths.update(x.path for x in r.original_router.routes)
-        else:
+        routes = getattr(r, "original_router", None)
+        if routes is not None:
+            paths.update(x.path for x in routes.routes)
+        elif hasattr(r, "path"):
             paths.add(r.path)
     return paths
 
@@ -49,7 +49,9 @@ def test_create_app_recovers_interrupted_tasks(config):
         s.commit()
     create_app(config)
     with SessionLocal() as s:
-        tasks = s.query(ScrapeTask).all()
+        tasks = s.query(ScrapeTask).order_by(ScrapeTask.id).all()
         assert len(tasks) == 2
-        assert all(t.status == TaskStatus.FAILED.value for t in tasks)
-        assert all(t.error_message == "进程重启中断" for t in tasks)
+        by_status = {t.status: t for t in tasks}
+        assert "queued" in by_status
+        failed = by_status[TaskStatus.FAILED.value]
+        assert failed.error_message == "进程重启中断"

@@ -17,9 +17,10 @@ def test_recover_interrupted_tasks(config):
         s.commit()
     recover_interrupted_tasks()
     with SessionLocal() as s:
+        # PRD §6：仅 in_progress 置失败；queued 未开始，重启后由 worker 继续执行
         statuses = {t.status for t in s.query(ScrapeTask).all()}
-        assert "queued" not in statuses
+        assert "queued" in statuses
         assert "in_progress" not in statuses
         failed = s.query(ScrapeTask).filter_by(status=TaskStatus.FAILED.value).all()
-        assert len(failed) == 2
+        assert len(failed) == 1
         assert failed[0].error_message == "进程重启中断"

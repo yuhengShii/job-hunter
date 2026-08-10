@@ -12,7 +12,7 @@
 ## 目录约定
 
 - 后端代码在 `backend/app/` 包内：`api/`（路由，只做校验与响应组装）、`core/`（配置/JWT/日志）、`models/`（SQLAlchemy）、`schemas/`（Pydantic，禁止在路由中暴露 ORM 对象）、`scrapers/`（Scraper 抽象 + Playwright v1 + Firecrawl v2 预留）、`services/`（薪资解析/统计/APScheduler）。
-- 测试在 `backend/tests/`，本地 HTML fixture 放 `backend/tests/fixtures/`（pytest，63 项全绿；测试禁止访问真实 51job）。
+- 测试在 `backend/tests/`，本地 HTML fixture 放 `backend/tests/fixtures/`（pytest，107 项全绿；测试禁止访问真实 51job）；前端 vitest 23 项全绿。
 - SQLite 数据库放 `data/`，日志放 `logs/`（均已被 gitignore，仅保留 `.gitkeep`）。
 
 ## 必须遵循的 PRD 规则（实现时）
@@ -25,4 +25,4 @@
 
 ## 当前状态
 
-后端 v1 已实现（数据模型 / 认证 / 任务调度 / 抓取引擎 / API / 统计，pytest 全绿）；前端 v1 已实现（5 个页面，vitest + type-check + build 通过，手动冒烟通过）。生产模式由后端单端口托管 `frontend/dist`（`uv run uvicorn backend.app.main:app`）。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。
+后端 v1 已实现（数据模型 / 认证 / 任务调度 / 抓取引擎 / API / 统计，pytest 107 项全绿）；前端 v1 已实现（5 个页面，vitest 23 项 + type-check + build 通过，手动冒烟通过）。生产模式由后端单端口托管 `frontend/dist`（`uv run uvicorn backend.app.main:app`）。远程 `origin` 指向 https://github.com/yuhengShii/job-hunter.git。

@@ -28,44 +28,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { companiesApi } from '@/api/companies'
+import { computed } from 'vue'
 import type { JobOut } from '@/api/jobs'
 import { formatSalaryParsed, formatSalaryRaw, formatTime } from '@/utils/format'
 
 const props = defineProps<{ modelValue: boolean; job: JobOut | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 
-const companyMap = ref<Map<string, string>>(new Map())
-let loaded = false
-
-const companyName = computed(() => {
-  if (!props.job?.company_id) return '-'
-  return companyMap.value.get(props.job.company_id) ?? props.job.company_id
-})
-
-async function loadCompanies() {
-  if (loaded) return
-  try {
-    let page = 1
-    const map = new Map<string, string>()
-    for (;;) {
-      const res = await companiesApi.list({ page, page_size: 100 })
-      for (const c of res.items) map.set(c.company_id, c.name)
-      if (res.items.length < 100 || page >= 20) break
-      page += 1
-    }
-    companyMap.value = map
-    loaded = true
-  } catch {
-    // 公司名获取失败时降级显示 company_id
-  }
-}
-
-watch(
-  () => props.modelValue,
-  (v) => {
-    if (v) void loadCompanies()
-  },
-)
+// 公司名称/活跃度已由详情接口附带（company_name），无需再全量拉取 companies 表
+const companyName = computed(() => props.job?.company_name ?? props.job?.company_id ?? '-')
 </script>

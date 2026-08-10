@@ -41,6 +41,14 @@ def test_create_task_max_pages_cap(client):
     assert resp.status_code == 400
 
 
+def test_create_task_stores_max_pages(client):
+    resp = client.post("/api/tasks", json={"keyword_id": 1, "max_pages": 3})
+    assert resp.status_code == 200
+    assert resp.json()["max_pages"] == 3
+    tasks = client.get("/api/tasks").json()
+    assert tasks[0]["max_pages"] == 3
+
+
 def test_list_and_delete_task(client):
     client.post("/api/tasks", json={"keyword_id": 1})
     tasks = client.get("/api/tasks").json()

@@ -46,12 +46,18 @@ def salary_stats(db: Session, window: datetime | None, group_by: str = "city") -
         groups.setdefault(key, []).append((j.salary_min + j.salary_max) // 2)
     result = []
     for key, mids in sorted(groups.items()):
+        ordered = sorted(mids)
+        n = len(ordered)
+        if n % 2 == 1:
+            median = ordered[n // 2]
+        else:
+            median = (ordered[n // 2 - 1] + ordered[n // 2]) // 2
         result.append({
             "key": key,
-            "count": len(mids),
+            "count": n,
             "min": min(mids),
             "max": max(mids),
-            "median": sorted(mids)[len(mids) // 2],
+            "median": median,
         })
     return {"group_by": group_by, "items": result}
 

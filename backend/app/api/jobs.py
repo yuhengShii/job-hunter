@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
@@ -52,12 +52,19 @@ def list_jobs(
         q = q.filter(Job.salary_min >= salary_min)
     if salary_max is not None:
         q = q.filter(Job.salary_max <= salary_max)
-    items = q.order_by(Job.updated_at.desc()).all()
     if tag:
-        items = [j for j in items if tag in (j.tags or [])]
-    total = len(items)
+        # tags 为 JSON 数组（SQLite 存储为转义文本，LIKE 不可靠），用相关 EXISTS + json_each 精确匹配
+        tags_tv = func.json_each(Job.tags).table_valued("value")
+        q = q.filter(db.query(tags_tv.c.value).filter(tags_tv.c.value == tag).exists())
+    total = q.count()
     start = (page - 1) * page_size
-    return JobPage(total=total, items=_with_company(items[start : start + page_size], db))
+    items = (
+        q.order_by(Job.updated_at.desc())
+        .offset(start)
+        .limit(page_size)
+        .all()
+    )
+    return JobPage(total=total, items=_with_company(items, db))
 
 
 @jobs_router.get("/{job_key}", response_model=JobOut)

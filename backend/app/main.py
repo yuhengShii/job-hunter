@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.auth import auth_router
@@ -66,7 +66,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
-        def spa_fallback(full_path: str) -> FileResponse:
+        def spa_fallback(full_path: str):
+            if full_path.startswith("api/"):
+                # 未知 API 路径走 JSON 404，避免返回 index.html 干扰前端排查
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
             target = (FRONTEND_DIST / full_path).resolve()
             if full_path and target.is_file() and target.is_relative_to(FRONTEND_DIST.resolve()):
                 return FileResponse(target)

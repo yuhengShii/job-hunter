@@ -31,6 +31,7 @@ class CompanyDraft:
     size: str | None = None
     activity: str | None = None
     website: str | None = None
+    company_url: str | None = None
 
 
 @dataclass

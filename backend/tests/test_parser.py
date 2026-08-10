@@ -37,6 +37,8 @@ def test_search_page_company_from_card():
     assert comp.size == "5000-10000人"
     # fixture 卡片 tip 为"简历处理快"（不含"回复"二字，旧逻辑会漏抓）
     assert comp.activity == "简历处理快"
+    # 公司详情页链接来自卡片 a.comp 的 href
+    assert comp.company_url == "https://jobs.51job.com/all/coUjYFZF45AD0EZFQyAGY.html"
 
 
 def test_search_page_activity_from_card():

@@ -83,7 +83,8 @@ class PlaywrightScraper(Scraper):
         consecutive_captcha = 0
         last_ids: set[str] | None = None
         try:
-            for n in range(1, pages + 1):
+            n = 1
+            while n <= pages:
                 result, page = await self._fetch_page(page, keyword, n, area)
                 if not result.failed and result.jobs and last_ids is not None:
                     ids = {j.job_id for j in result.jobs}
@@ -94,6 +95,9 @@ class PlaywrightScraper(Scraper):
                         result = PageResult(page_num=n, jobs=[], failed=True)
                 if not result.failed:
                     last_ids = {j.job_id for j in result.jobs}
+                    # 首页解析出总页数后截断循环，避免越过真实末页空转
+                    if result.total_pages:
+                        pages = min(pages, result.total_pages)
                 if result.failed:
                     if result.captcha:
                         consecutive_failures = 0
@@ -126,6 +130,9 @@ class PlaywrightScraper(Scraper):
                             result, page = await self._fetch_page(page, keyword, n, area)
                         if result.failed:
                             logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
+                            if consecutive_failures >= 3:
+                                logger.warning("连续 %s 页抓取失败，放弃剩余页: keyword=%s", consecutive_failures, keyword)
+                                break
                         else:
                             consecutive_failures = 0
                 else:
@@ -133,6 +140,7 @@ class PlaywrightScraper(Scraper):
                     consecutive_failures = 0
                 yield result
                 await asyncio.sleep(random.uniform(3.0, 8.0))
+                n += 1
         finally:
             await page.close()
 

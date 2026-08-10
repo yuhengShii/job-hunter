@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
-from backend.app.models import Keyword
+from backend.app.models import Keyword, ScrapeTask, TaskStatus
 from backend.app.schemas.keyword import KeywordCreate, KeywordOut, KeywordUpdate
 
 keywords_router = APIRouter(prefix="/api/keywords", tags=["keywords"])
+
+_RUNNING = (TaskStatus.QUEUED.value, TaskStatus.IN_PROGRESS.value)
 
 
 def _raise_dup(kw: str, city: str) -> None:
@@ -54,6 +56,12 @@ def delete_keyword(keyword_id: int, db=Depends(get_db), user=Depends(get_current
     kw = db.get(Keyword, keyword_id)
     if kw is None:
         raise AppError("关键字不存在", 404)
+    if (
+        db.query(ScrapeTask)
+        .filter(ScrapeTask.keyword_id == keyword_id, ScrapeTask.status.in_(_RUNNING))
+        .first()
+    ):
+        raise AppError("该关键字有排队/进行中的任务，不能删除", 400)
     db.delete(kw)
     db.commit()
     return {"ok": True}

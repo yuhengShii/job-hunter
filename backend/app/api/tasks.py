@@ -25,6 +25,7 @@ def create_task(body: TaskCreate, db=Depends(get_db), user=Depends(get_current_u
     task = ScrapeTask(
         keyword_id=body.keyword_id,
         mode=body.mode,
+        max_pages=body.max_pages,
         status=TaskStatus.QUEUED.value,
     )
     db.add(task)
