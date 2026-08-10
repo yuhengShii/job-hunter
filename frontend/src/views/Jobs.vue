@@ -19,6 +19,27 @@
           <span class="sep">~</span>
           <el-input-number v-model="query.salary_max" :min="0" :step="1000" placeholder="最高" @change="search" />
         </el-form-item>
+        <el-form-item label="排序">
+          <el-select v-model="query.primary_sort" style="width: 130px" @change="search">
+            <el-option label="默认" value="" />
+            <el-option label="活跃值" value="activity_score" />
+            <el-option label="发布时间" value="publish_time" />
+          </el-select>
+          <el-select v-model="query.primary_dir" style="width: 90px" :disabled="!query.primary_sort" @change="search">
+            <el-option label="降序" value="desc" />
+            <el-option label="升序" value="asc" />
+          </el-select>
+          <span class="sep">+</span>
+          <el-select v-model="query.secondary_sort" style="width: 130px" :disabled="!query.primary_sort" @change="search">
+            <el-option label="无" value="" />
+            <el-option label="活跃值" value="activity_score" />
+            <el-option label="发布时间" value="publish_time" />
+          </el-select>
+          <el-select v-model="query.secondary_dir" style="width: 90px" :disabled="!query.primary_sort" @change="search">
+            <el-option label="降序" value="desc" />
+            <el-option label="升序" value="asc" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -104,6 +125,10 @@ const query = reactive<{
   tag: string
   salary_min: number | undefined
   salary_max: number | undefined
+  primary_sort: '' | 'activity_score' | 'publish_time'
+  primary_dir: 'asc' | 'desc'
+  secondary_sort: '' | 'activity_score' | 'publish_time'
+  secondary_dir: 'asc' | 'desc'
 }>({
   page: 1,
   page_size: 20,
@@ -113,6 +138,10 @@ const query = reactive<{
   tag: '',
   salary_min: undefined,
   salary_max: undefined,
+  primary_sort: '',
+  primary_dir: 'desc',
+  secondary_sort: '',
+  secondary_dir: 'desc',
 })
 
 async function load() {
@@ -125,6 +154,10 @@ async function load() {
     if (query.tag) params.tag = query.tag
     if (query.salary_min != null) params.salary_min = query.salary_min
     if (query.salary_max != null) params.salary_max = query.salary_max
+    if (query.primary_sort) {
+      params.sort = [`${query.primary_sort}:${query.primary_dir}`]
+      if (query.secondary_sort) params.sort.push(`${query.secondary_sort}:${query.secondary_dir}`)
+    }
     page.value = await jobsApi.list(params)
   } catch {
     // 拦截器已提示
@@ -145,6 +178,10 @@ function reset() {
   query.tag = ''
   query.salary_min = undefined
   query.salary_max = undefined
+  query.primary_sort = ''
+  query.primary_dir = 'desc'
+  query.secondary_sort = ''
+  query.secondary_dir = 'desc'
   search()
 }
 

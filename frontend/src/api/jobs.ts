@@ -36,6 +36,7 @@ export interface JobQuery {
   tag?: string
   salary_min?: number
   salary_max?: number
+  sort?: string[]
   page?: number
   page_size?: number
 }

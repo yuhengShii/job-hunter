@@ -8,6 +8,25 @@ from backend.app.schemas.job import JobOut, JobPage
 
 jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
+_SORT_FIELDS: dict[str, object] = {
+    "publish_time": Job.publish_time,
+    "activity_score": Company.activity_score,
+}
+
+
+def _parse_sort(sort: list[str]) -> list:
+    """解析 sort=field:direction（可重复，顺序即优先级），非法返回 400。"""
+    orders = []
+    for spec in sort:
+        field, sep, direction = spec.partition(":")
+        if field not in _SORT_FIELDS or not sep:
+            raise AppError(f"不支持的排序字段或格式: {spec}", 400)
+        if direction not in ("asc", "desc"):
+            raise AppError(f"不支持的排序方向: {direction}", 400)
+        expr = _SORT_FIELDS[field].desc() if direction == "desc" else _SORT_FIELDS[field].asc()
+        orders.append(expr.nulls_last())
+    return orders
+
 
 def _with_company(jobs: list[Job], db) -> list[JobOut]:
     """为职位附加公司名称与活跃度（来自 companies 表）。"""
@@ -38,6 +57,7 @@ def list_jobs(
     salary_max: int | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort: list[str] = Query([]),
     db=Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -56,10 +76,14 @@ def list_jobs(
         # tags 为 JSON 数组（SQLite 存储为转义文本，LIKE 不可靠），用相关 EXISTS + json_each 精确匹配
         tags_tv = func.json_each(Job.tags).table_valued("value")
         q = q.filter(db.query(tags_tv.c.value).filter(tags_tv.c.value == tag).exists())
+    orders = _parse_sort(sort)
+    needs_company = any(s.startswith("activity_score") for s in sort)
+    if needs_company:
+        q = q.outerjoin(Company, Job.company_id == Company.company_id)
     total = q.count()
     start = (page - 1) * page_size
     items = (
-        q.order_by(Job.updated_at.desc())
+        q.order_by(*orders, Job.updated_at.desc())
         .offset(start)
         .limit(page_size)
         .all()

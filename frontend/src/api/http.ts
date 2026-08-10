@@ -4,7 +4,11 @@ import { ElMessage } from 'element-plus'
 export const TOKEN_KEY = 'job_hunter_token'
 export const USERNAME_KEY = 'job_hunter_username'
 
-export const http = axios.create({ baseURL: '/api', timeout: 15000 })
+export const http = axios.create({
+  baseURL: '/api',
+  timeout: 15000,
+  paramsSerializer: { indexes: null },
+})
 
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY)
