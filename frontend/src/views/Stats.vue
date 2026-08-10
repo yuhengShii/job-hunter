@@ -80,7 +80,7 @@
     </el-row>
 
     <el-card class="chart-card">
-      <template #header>时间趋势（近 30 天）</template>
+      <template #header>发布时间趋势（近 30 天）</template>
       <div ref="trendEl" class="chart" />
     </el-card>
 
