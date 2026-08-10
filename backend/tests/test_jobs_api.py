@@ -17,7 +17,7 @@ def client(config):
             Company(company_id="c1", name="A公司", type="民营", industry="软件", size="100-499人", activity="今日回复8次", activity_score=8),
             Company(company_id="c2", name="B公司", type="外企", industry="金融", size="1000人以上", activity="3分钟前回复", activity_score=3),
             Job(job_id="j1", title="Python工程师", salary_min=10000, salary_max=20000, city="上海", district="长宁区", area="长宁区", degree="本科", year="3-4年", tags=["急招"], company_id="c1", publish_time=datetime(2024, 3, 1)),
-            Job(job_id="j2", title="Java工程师", salary_min=15000, salary_max=25000, city="北京", tags=["高薪"], company_id="c1", publish_time=datetime(2024, 2, 1)),
+            Job(job_id="j2", title="Java工程师", salary_min=15000, salary_max=25000, city="北京", district="海淀区", tags=["高薪"], company_id="c1", publish_time=datetime(2024, 2, 1)),
             Job(job_id="j3", title="前端工程师", salary_min=None, salary_max=None, city="上海", tags=[], company_id="c1", publish_time=datetime(2024, 1, 15)),
             Job(job_id="j4", title="测试工程师", company_id="c2", publish_time=datetime(2024, 1, 1)),
             Job(job_id="j5", title="运维工程师", company_id="c2", publish_time=datetime(2024, 6, 1)),
@@ -54,6 +54,42 @@ def test_filter_jobs(client):
     assert resp.json()["total"] == 1
     resp = client.get("/api/jobs", params={"keyword": "长宁"})
     assert resp.json()["total"] == 1
+
+
+def test_filter_by_district(client):
+    resp = client.get("/api/jobs", params={"district": "长宁区"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["job_id"] == "j1"
+    resp = client.get("/api/jobs", params={"district": "不存在的区"})
+    assert resp.json()["total"] == 0
+
+
+def test_filter_publish_time_range(client):
+    resp = client.get("/api/jobs", params={"publish_time_from": "2024-02-01"})
+    assert resp.json()["total"] == 3
+    assert {i["job_id"] for i in resp.json()["items"]} == {"j1", "j2", "j5"}
+    resp = client.get("/api/jobs", params={"publish_time_to": "2024-02-01"})
+    assert {i["job_id"] for i in resp.json()["items"]} == {"j2", "j3", "j4"}
+    resp = client.get("/api/jobs", params={"publish_time_from": "2024-01-15", "publish_time_to": "2024-03-01"})
+    assert {i["job_id"] for i in resp.json()["items"]} == {"j1", "j2", "j3"}
+    resp = client.get("/api/jobs", params={"publish_time_from": "2024-06-02"})
+    assert resp.json()["total"] == 0
+
+
+def test_filter_options(client):
+    resp = client.get("/api/jobs/filter-options")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["cities"] == ["上海", "北京"]
+    assert set(data["districts"]) == {"长宁区", "海淀区"}
+    resp = client.get("/api/jobs/filter-options", params={"city": "上海"})
+    assert resp.json()["districts"] == ["长宁区"]
+    resp = client.get("/api/jobs/filter-options", params={"city": "北京"})
+    assert resp.json()["districts"] == ["海淀区"]
+    resp = client.get("/api/jobs/filter-options", params={"city": "不存在的城市"})
+    assert resp.json()["districts"] == []
 
 
 def test_sort_by_activity_score(client):

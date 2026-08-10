@@ -1,10 +1,12 @@
+from datetime import date, datetime, time, timedelta
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
 from backend.app.models import Company, Job
-from backend.app.schemas.job import JobOut, JobPage
+from backend.app.schemas.job import JobFilterOptions, JobOut, JobPage
 
 jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -50,11 +52,14 @@ def _with_company(jobs: list[Job], db) -> list[JobOut]:
 @jobs_router.get("", response_model=JobPage)
 def list_jobs(
     city: str | None = None,
+    district: str | None = None,
     company_id: str | None = None,
     keyword: str | None = None,
     tag: str | None = None,
     salary_min: int | None = None,
     salary_max: int | None = None,
+    publish_time_from: date | None = None,
+    publish_time_to: date | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     sort: list[str] = Query([]),
@@ -64,6 +69,8 @@ def list_jobs(
     q = db.query(Job)
     if city:
         q = q.filter(Job.city == city)
+    if district:
+        q = q.filter(Job.district == district)
     if company_id:
         q = q.filter(Job.company_id == company_id)
     if keyword:
@@ -72,6 +79,10 @@ def list_jobs(
         q = q.filter(Job.salary_min >= salary_min)
     if salary_max is not None:
         q = q.filter(Job.salary_max <= salary_max)
+    if publish_time_from:
+        q = q.filter(Job.publish_time >= datetime.combine(publish_time_from, time.min))
+    if publish_time_to:
+        q = q.filter(Job.publish_time < datetime.combine(publish_time_to, time.min) + timedelta(days=1))
     if tag:
         # tags 为 JSON 数组（SQLite 存储为转义文本，LIKE 不可靠），用相关 EXISTS + json_each 精确匹配
         tags_tv = func.json_each(Job.tags).table_valued("value")
@@ -89,6 +100,27 @@ def list_jobs(
         .all()
     )
     return JobPage(total=total, items=_with_company(items, db))
+
+
+@jobs_router.get("/filter-options", response_model=JobFilterOptions)
+def job_filter_options(
+    city: str | None = None,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    cities = [
+        r[0]
+        for r in db.query(Job.city)
+        .filter(Job.city.isnot(None))
+        .group_by(Job.city)
+        .order_by(func.count().desc(), Job.city)
+        .all()
+    ]
+    q = db.query(Job.district).filter(Job.district.isnot(None))
+    if city:
+        q = q.filter(Job.city == city)
+    districts = [r[0] for r in q.group_by(Job.district).order_by(Job.district).all()]
+    return JobFilterOptions(cities=cities, districts=districts)
 
 
 @jobs_router.get("/{job_key}", response_model=JobOut)

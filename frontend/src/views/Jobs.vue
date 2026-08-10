@@ -6,7 +6,14 @@
           <el-input v-model="query.keyword" clearable placeholder="职位/地区包含" style="width: 180px" @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="城市">
-          <el-input v-model="query.city" clearable style="width: 140px" @keyup.enter="search" />
+          <el-select v-model="query.city" clearable placeholder="全部" style="width: 140px" @change="onCityChange">
+            <el-option v-for="c in cityOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="区域">
+          <el-select v-model="query.district" clearable placeholder="全部" style="width: 140px" :disabled="districtOptions.length === 0" @change="search">
+            <el-option v-for="d in districtOptions" :key="d" :label="d" :value="d" />
+          </el-select>
         </el-form-item>
         <el-form-item label="公司">
           <el-input v-model="query.company_id" clearable placeholder="公司 ID" style="width: 160px" @keyup.enter="search" />
@@ -39,6 +46,18 @@
             <el-option label="降序" value="desc" />
             <el-option label="升序" value="asc" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="发布时间">
+          <el-date-picker
+            v-model="publishRange"
+            type="daterange"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            :shortcuts="dateShortcuts"
+            style="width: 240px"
+            @change="search"
+          />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
@@ -115,12 +134,29 @@ const loading = ref(false)
 const page = ref<JobPage>({ total: 0, items: [] })
 const detailVisible = ref(false)
 const detailJob = ref<JobOut | null>(null)
+const cityOptions = ref<string[]>([])
+const districtOptions = ref<string[]>([])
+const publishRange = ref<[string, string] | null>(null)
+
+function daysAgo(n: number): Date {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d
+}
+
+const dateShortcuts: Array<{ text: string; value: () => [Date, Date] }> = [
+  { text: '今天', value: () => [new Date(), new Date()] },
+  { text: '近7天', value: () => [daysAgo(6), new Date()] },
+  { text: '近30天', value: () => [daysAgo(29), new Date()] },
+  { text: '近90天', value: () => [daysAgo(89), new Date()] },
+]
 
 const query = reactive<{
   page: number
   page_size: number
   keyword: string
   city: string
+  district: string
   company_id: string
   tag: string
   salary_min: number | undefined
@@ -134,6 +170,7 @@ const query = reactive<{
   page_size: 20,
   keyword: '',
   city: '',
+  district: '',
   company_id: '',
   tag: '',
   salary_min: undefined,
@@ -150,10 +187,15 @@ async function load() {
     const params: JobQuery = { page: query.page, page_size: query.page_size }
     if (query.keyword) params.keyword = query.keyword
     if (query.city) params.city = query.city
+    if (query.district) params.district = query.district
     if (query.company_id) params.company_id = query.company_id
     if (query.tag) params.tag = query.tag
     if (query.salary_min != null) params.salary_min = query.salary_min
     if (query.salary_max != null) params.salary_max = query.salary_max
+    if (publishRange.value) {
+      params.publish_time_from = publishRange.value[0]
+      params.publish_time_to = publishRange.value[1]
+    }
     if (query.primary_sort) {
       params.sort = [`${query.primary_sort}:${query.primary_dir}`]
       if (query.secondary_sort) params.sort.push(`${query.secondary_sort}:${query.secondary_dir}`)
@@ -166,6 +208,22 @@ async function load() {
   }
 }
 
+async function loadFilterOptions() {
+  try {
+    const opts = await jobsApi.filterOptions(query.city)
+    cityOptions.value = opts.cities
+    districtOptions.value = opts.districts
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+function onCityChange() {
+  query.district = ''
+  loadFilterOptions()
+  search()
+}
+
 function search() {
   query.page = 1
   load()
@@ -174,6 +232,7 @@ function search() {
 function reset() {
   query.keyword = ''
   query.city = ''
+  query.district = ''
   query.company_id = ''
   query.tag = ''
   query.salary_min = undefined
@@ -182,6 +241,8 @@ function reset() {
   query.primary_dir = 'desc'
   query.secondary_sort = ''
   query.secondary_dir = 'desc'
+  publishRange.value = null
+  loadFilterOptions()
   search()
 }
 
@@ -206,7 +267,10 @@ function scoreClass(score: number | undefined): string {
   return 'score-low'
 }
 
-onMounted(load)
+onMounted(() => {
+  loadFilterOptions()
+  load()
+})
 </script>
 
 <style scoped>

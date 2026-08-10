@@ -32,3 +32,8 @@ class JobOut(BaseModel):
 class JobPage(BaseModel):
     total: int
     items: list[JobOut]
+
+
+class JobFilterOptions(BaseModel):
+    cities: list[str]
+    districts: list[str]

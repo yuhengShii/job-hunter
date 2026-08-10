@@ -31,17 +31,27 @@ export interface JobPage {
 
 export interface JobQuery {
   city?: string
+  district?: string
   company_id?: string
   keyword?: string
   tag?: string
   salary_min?: number
   salary_max?: number
+  publish_time_from?: string
+  publish_time_to?: string
   sort?: string[]
   page?: number
   page_size?: number
 }
 
+export interface JobFilterOptions {
+  cities: string[]
+  districts: string[]
+}
+
 export const jobsApi = {
   list: (params: JobQuery) => http.get<JobPage>('/jobs', { params }).then((r) => r.data),
   get: (jobId: string) => http.get<JobOut>(`/jobs/${jobId}`).then((r) => r.data),
+  filterOptions: (city?: string) =>
+    http.get<JobFilterOptions>('/jobs/filter-options', { params: city ? { city } : undefined }).then((r) => r.data),
 }
