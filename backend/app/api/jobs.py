@@ -53,6 +53,7 @@ def _with_company(jobs: list[Job], db) -> list[JobOut]:
 def list_jobs(
     city: str | None = None,
     district: str | None = None,
+    area: str | None = None,
     company_id: str | None = None,
     keyword: str | None = None,
     tag: str | None = None,
@@ -71,6 +72,8 @@ def list_jobs(
         q = q.filter(Job.city == city)
     if district:
         q = q.filter(Job.district == district)
+    if area:
+        q = q.filter(Job.area == area)
     if company_id:
         q = q.filter(Job.company_id == company_id)
     if keyword:

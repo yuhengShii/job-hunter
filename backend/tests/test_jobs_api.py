@@ -66,6 +66,18 @@ def test_filter_by_district(client):
     assert resp.json()["total"] == 0
 
 
+def test_filter_by_area(client):
+    resp = client.get("/api/jobs", params={"area": "长宁区"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["job_id"] == "j1"
+    resp = client.get("/api/jobs", params={"area": "不存在的地区"})
+    assert resp.json()["total"] == 0
+    resp = client.get("/api/jobs", params={"area": "长宁区", "publish_time_from": "2024-03-02"})
+    assert resp.json()["total"] == 0
+
+
 def test_filter_publish_time_range(client):
     resp = client.get("/api/jobs", params={"publish_time_from": "2024-02-01"})
     assert resp.json()["total"] == 3
