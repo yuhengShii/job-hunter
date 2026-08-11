@@ -15,6 +15,9 @@
             <el-option v-for="d in districtOptions" :key="d" :label="d" :value="d" />
           </el-select>
         </el-form-item>
+        <el-form-item label="地区">
+          <el-input v-model="query.area" clearable placeholder="如 上海-长宁区" style="width: 160px" @keyup.enter="search" />
+        </el-form-item>
         <el-form-item label="公司">
           <el-input v-model="query.company_id" clearable placeholder="公司 ID" style="width: 160px" @keyup.enter="search" />
         </el-form-item>
@@ -157,6 +160,7 @@ const query = reactive<{
   keyword: string
   city: string
   district: string
+  area: string
   company_id: string
   tag: string
   salary_min: number | undefined
@@ -171,6 +175,7 @@ const query = reactive<{
   keyword: '',
   city: '',
   district: '',
+  area: '',
   company_id: '',
   tag: '',
   salary_min: undefined,
@@ -188,6 +193,7 @@ async function load() {
     if (query.keyword) params.keyword = query.keyword
     if (query.city) params.city = query.city
     if (query.district) params.district = query.district
+    if (query.area) params.area = query.area
     if (query.company_id) params.company_id = query.company_id
     if (query.tag) params.tag = query.tag
     if (query.salary_min != null) params.salary_min = query.salary_min
@@ -233,6 +239,7 @@ function reset() {
   query.keyword = ''
   query.city = ''
   query.district = ''
+  query.area = ''
   query.company_id = ''
   query.tag = ''
   query.salary_min = undefined

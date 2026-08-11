@@ -32,6 +32,7 @@ export interface JobPage {
 export interface JobQuery {
   city?: string
   district?: string
+  area?: string
   company_id?: string
   keyword?: string
   tag?: string
