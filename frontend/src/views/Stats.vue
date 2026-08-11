@@ -88,15 +88,30 @@
       <template #header>标签词频 Top10</template>
       <div ref="tagsEl" class="chart" />
     </el-card>
+
+    <el-dialog v-model="jumpVisible" title="跳转职位列表" width="420px">
+      <div class="jump-summary">
+        <div>时间：{{ jumpDate }}</div>
+        <div v-if="jumpRegion">地区：{{ jumpRegion }}</div>
+      </div>
+      <el-input v-model="jumpKeyword" placeholder="关键字（留空则不过滤）" clearable style="margin-top: 12px" />
+      <template #footer>
+        <el-button @click="jumpVisible = false">取消</el-button>
+        <el-button type="primary" @click="jumpToJobs">确认跳转</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
 import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult, type TrendSeries } from '@/api/stats'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
+
+const router = useRouter()
 
 const keywordsStore = useKeywordsStore()
 const keywordId = ref<number | null>(null)
@@ -123,6 +138,11 @@ const sizeEl = ref<HTMLElement | null>(null)
 const trendEl = ref<HTMLElement | null>(null)
 const tagsEl = ref<HTMLElement | null>(null)
 const distEl = ref<HTMLElement | null>(null)
+
+const jumpVisible = ref(false)
+const jumpDate = ref('')
+const jumpRegion = ref('')
+const jumpKeyword = ref('')
 
 const salaryOption = computed<EChartsOption>(() => {
   const items = salary.value?.items ?? []
@@ -287,7 +307,7 @@ useChart(salaryEl, salaryOption)
 const industryChart = useChart(industryEl, industryOption)
 useChart(typeEl, typeOption)
 useChart(sizeEl, sizeOption)
-useChart(trendEl, trendOption)
+const trendChart = useChart(trendEl, trendOption)
 useChart(tagsEl, tagsOption)
 
 const distOption = computed<EChartsOption>(() => ({
@@ -298,6 +318,22 @@ const distOption = computed<EChartsOption>(() => ({
   series: [{ type: 'bar', data: (dist.value?.items ?? []).map((i) => i.count), barMaxWidth: 40 }],
 }))
 useChart(distEl, distOption)
+
+function jumpToJobs() {
+  const query: Record<string, string> = {
+    publish_time_from: jumpDate.value,
+    publish_time_to: jumpDate.value,
+  }
+  const gb = groupBy.value
+  const skip = !jumpRegion.value || jumpRegion.value === '未知' || jumpRegion.value === '其他'
+  if (!skip && gb === 'city') query.city = jumpRegion.value
+  else if (!skip && gb === 'district') query.district = jumpRegion.value
+  else if (!skip && gb === 'area') query.area = jumpRegion.value
+  const kw = jumpKeyword.value.trim()
+  if (kw) query.keyword = kw
+  jumpVisible.value = false
+  router.push({ path: '/jobs', query })
+}
 
 let statsSeq = 0
 
@@ -324,6 +360,28 @@ async function reload() {
 }
 
 onMounted(async () => {
+  trendChart.value?.on('click', (params: unknown) => {
+    const p = params as { value?: [number, number, number]; dataIndex?: number }
+    let date: string | null = null
+    let region = ''
+    if (trend.value?.series?.length) {
+      const [xi, yi] = p.value as [number, number, number]
+      const dates = (trend.value.series[0]?.points ?? []).map((pt) => pt.date)
+      const keys = trend.value.series.map((s) => s.key)
+      date = dates[xi] ?? null
+      region = keys[yi] ?? ''
+    } else {
+      const days = trend.value?.days ?? []
+      const idx = p.dataIndex ?? -1
+      date = idx >= 0 ? (days[idx]?.date ?? null) : null
+    }
+    if (!date) return
+    jumpDate.value = date
+    jumpRegion.value = region
+    const kw = keywordsStore.list.find((k) => k.id === keywordId.value)
+    jumpKeyword.value = kw?.keyword ?? ''
+    jumpVisible.value = true
+  })
   try {
     await keywordsStore.fetch()
   } catch {
@@ -369,4 +427,5 @@ onMounted(async () => {
 }
 .card-num { font-size: 26px; font-weight: 600; text-align: center; }
 .card-label { margin-top: 4px; text-align: center; color: var(--el-text-color-secondary); }
+.jump-summary { line-height: 24px; color: var(--el-text-color-regular); }
 </style>
