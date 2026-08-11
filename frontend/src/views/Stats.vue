@@ -107,9 +107,10 @@
 import { computed, onMounted, ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
-import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult, type TrendSeries } from '@/api/stats'
+import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult } from '@/api/stats'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
+import { trendDisplay } from '@/utils/trend'
 
 const router = useRouter()
 
@@ -223,32 +224,10 @@ const pies = [
   { title: '规模分布', ref: setRef(sizeEl), collapsible: false },
 ]
 
-const TREND_TOP_N = 20
-
 const trendOption = computed<EChartsOption>(() => {
   const grouped = trend.value?.series
   if (grouped && grouped.length) {
-    const total = (s: TrendSeries) => s.points.reduce((a, p) => a + p.count, 0)
-    const sorted = [...grouped].sort((a, b) => total(b) - total(a))
-    const top = sorted.slice(0, TREND_TOP_N)
-    const rest = sorted.slice(TREND_TOP_N)
-    const keys = top.map((s) => s.key)
-    let seriesList = top
-    if (rest.length) {
-      const dates = (top[0]?.points ?? rest[0].points).map((p) => p.date)
-      seriesList = [
-        ...top,
-        {
-          key: '其他',
-          points: dates.map((d) => ({
-            date: d,
-            count: rest.reduce((s, it) => s + (it.points.find((p) => p.date === d)?.count ?? 0), 0),
-          })),
-        },
-      ]
-      keys.push('其他')
-    }
-    const dates = seriesList[0].points.map((p) => p.date)
+    const { seriesList, keys, dates } = trendDisplay(grouped)
     const data: [number, number, number][] = []
     seriesList.forEach((s, yi) => {
       s.points.forEach((p, xi) => {
@@ -361,13 +340,14 @@ async function reload() {
 
 onMounted(async () => {
   trendChart.value?.on('click', (params: unknown) => {
-    const p = params as { value?: [number, number, number]; dataIndex?: number }
+    const p = params as { value?: [number, number, number]; dataIndex?: number; name?: string }
     let date: string | null = null
     let region = ''
     if (trend.value?.series?.length) {
-      const [xi, yi] = p.value as [number, number, number]
-      const dates = (trend.value.series[0]?.points ?? []).map((pt) => pt.date)
-      const keys = trend.value.series.map((s) => s.key)
+      const v = p.value
+      if (!v) return
+      const [xi, yi] = v
+      const { dates, keys } = trendDisplay(trend.value.series)
       date = dates[xi] ?? null
       region = keys[yi] ?? ''
     } else {
