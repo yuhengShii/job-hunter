@@ -129,9 +129,14 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { jobsApi, type JobOut, type JobPage, type JobQuery } from '@/api/jobs'
 import { formatSalaryRaw, formatTime } from '@/utils/format'
+import { jobsStateFromRoute } from '@/utils/jobsQuery'
 import JobDetailDialog from '@/components/JobDetailDialog.vue'
+
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const page = ref<JobPage>({ total: 0, items: [] })
@@ -249,6 +254,7 @@ function reset() {
   query.secondary_sort = ''
   query.secondary_dir = 'desc'
   publishRange.value = null
+  router.replace({ path: '/jobs' })
   loadFilterOptions()
   search()
 }
@@ -275,6 +281,12 @@ function scoreClass(score: number | undefined): string {
 }
 
 onMounted(() => {
+  const s = jobsStateFromRoute(route.query as Record<string, unknown>)
+  query.city = s.city
+  query.district = s.district
+  query.area = s.area
+  query.keyword = s.keyword
+  publishRange.value = s.publishRange
   loadFilterOptions()
   load()
 })
