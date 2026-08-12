@@ -358,8 +358,7 @@ onMounted(async () => {
     if (!date) return
     jumpDate.value = date
     jumpRegion.value = region
-    const kw = keywordsStore.list.find((k) => k.id === keywordId.value)
-    jumpKeyword.value = kw?.keyword ?? ''
+    jumpKeyword.value = ''
     jumpVisible.value = true
   })
   try {

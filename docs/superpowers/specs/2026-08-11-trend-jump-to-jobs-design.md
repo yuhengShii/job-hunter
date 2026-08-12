@@ -18,9 +18,11 @@
 ### 交互流程
 
 1. 点击热力图格子（某天×某地区）或折线图数据点（某天）→ 弹出对话框。
-2. 对话框展示将应用的筛选（时间、地区），含关键字输入框，默认值 = 统计页当前选中的关键字文本（可修改/清空）。
+2. 对话框展示将应用的筛选（时间、地区），含关键字输入框（**默认留空**，需要时手动输入）。
 3. 确认 → `router.push('/jobs')` 携带 query；取消 → 不跳转。
 4. 职位列表页 onMounted 读取 route.query 初始化筛选并自动加载。
+
+> 关键字默认值说明：趋势按关键字统计时用的是「任务窗口」语义（该任务抓到的所有职位），而职位列表的关键字是「标题/地区文本包含」筛选，两者语义不同。预填会引入趋势页没有的过滤（实测同一格子 13 条只命中 2 条），故弹窗默认留空，保证跳转数量与趋势格子一致。
 
 ### query 组装规则（Stats.vue）
 
@@ -37,7 +39,7 @@
 - `api/jobs.ts`：`JobQuery` 增加 `area?`。
 - `Jobs.vue`：筛选栏新增「地区」文本框（参照"公司 ID"输入模式，clearable）；`query.area` 组参；reset 清空；onMounted 读取 route.query 初始化（city/district/area/keyword/publish_time_from/to），reset 时 `router.replace` 清 URL query 防刷新复活。
 - 新增纯函数 `src/utils/jobsQuery.ts`：`jobsStateFromRoute(query)` 将 route.query 转初始筛选状态（含日期格式校验 `^\d{4}-\d{2}-\d{2}$`），便于 vitest 单测。
-- `Stats.vue`：捕获 trend chart 实例并绑定 `click` 事件（热力图取 `params.value[0]/[1]` → 日期/行 key；折线图取 `params.dataIndex` → days 数组）；新增跳转对话框（时间/地区展示 + 关键字输入）。
+- `Stats.vue`：捕获 trend chart 实例并绑定 `click` 事件（热力图取 `params.value[0]/[1]` → 日期/行 key；折线图取 `params.dataIndex` → days 数组）；新增跳转对话框（时间/地区展示 + 关键字输入，默认空）。
 
 ## 测试
 
