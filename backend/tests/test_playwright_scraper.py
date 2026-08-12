@@ -12,6 +12,23 @@ def test_playwright_scraper_implements_interface():
     assert issubclass(PlaywrightScraper, Scraper)
     sig = inspect.signature(PlaywrightScraper.search)
     assert sig.return_annotation == AsyncGenerator[PageResult, None]
+    assert "industry" in sig.parameters
+
+
+def test_build_search_url_with_industry():
+    from backend.app.scrapers.playwright import build_search_url
+
+    url = build_search_url("医疗采购", 2, "020000", "08,46,47")
+    assert "keyword=%E5%8C%BB%E7%96%97%E9%87%87%E8%B4%AD" in url
+    assert "searchType=2" in url and "pageNum=2" in url and "jobArea=020000" in url
+    assert "industry=08%2C46%2C47" in url
+
+
+def test_build_search_url_without_industry():
+    from backend.app.scrapers.playwright import build_search_url
+
+    url = build_search_url("python", 1, "000000", None)
+    assert "industry" not in url
 
 
 def test_scraper_is_async_generator():
@@ -76,7 +93,7 @@ class _FakePW:
 
 
 def _seq_fetch(seq):
-    async def fetch(page, keyword, n, area="000000"):
+    async def fetch(page, keyword, n, area="000000", industry=None):
         return next(seq), page
 
     return fetch
@@ -423,7 +440,7 @@ def test_search_aborts_after_three_consecutive_captcha_pages(monkeypatch):
     fetched = []
 
     def _counting_fetch(seq):
-        async def fetch(page, keyword, n, area="000000"):
+        async def fetch(page, keyword, n, area="000000", industry=None):
             fetched.append(n)
             return next(seq), page
 

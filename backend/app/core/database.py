@@ -166,6 +166,19 @@ def _migrate_companies_drop_website(engine) -> None:
     logger.info("迁移完成：companies 删除 website 列")
 
 
+def _migrate_keywords_industry(engine) -> None:
+    """轻量迁移：keywords 表增加 industry 列（NULL=不过滤，逗号分隔行业编码）。"""
+    insp = inspect(engine)
+    if "keywords" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("keywords")}
+    if "industry" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE keywords ADD COLUMN industry VARCHAR(128)"))
+    logger.info("迁移完成：keywords 增加 industry 列")
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -174,6 +187,7 @@ def init_db(config: Config) -> None:
 
     Base.metadata.create_all(engine)
     _migrate_keywords_city(engine)
+    _migrate_keywords_industry(engine)
     _migrate_companies_activity_score(engine)
     _migrate_jobs_degree_year(engine)
     _migrate_jobs_job_url(engine)

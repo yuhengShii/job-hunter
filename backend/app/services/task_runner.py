@@ -55,6 +55,7 @@ async def execute_task(task_id: int) -> None:
         keyword = db.get(Keyword, task.keyword_id)
         kw_text = keyword.keyword if keyword else ""
         kw_area = keyword.city if keyword else "000000"
+        kw_industry = keyword.industry if keyword else None
         task_max_pages = task.max_pages
     cfg = Config(repo_root=REPO_ROOT)
     # per-task max_pages 优先（创建时已校验 ≤ 全局上限），默认取全局上限
@@ -62,7 +63,7 @@ async def execute_task(task_id: int) -> None:
     scraper = PlaywrightScraper(headful=cfg.headful)
     try:
         first_page = True
-        async for result in scraper.search(kw_text, max_pages, area=kw_area):
+        async for result in scraper.search(kw_text, max_pages, area=kw_area, industry=kw_industry):
             with SessionLocal() as db:
                 task = db.get(ScrapeTask, task_id)
                 if result.failed:

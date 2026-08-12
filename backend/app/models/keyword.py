@@ -18,5 +18,6 @@ class Keyword(Base):
     city: Mapped[str] = mapped_column(String(64), default=DEFAULT_CITY, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     scrape_mode: Mapped[str] = mapped_column(String(32), default="playwright")
+    industry: Mapped[str | None] = mapped_column(String(128))
     last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

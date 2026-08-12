@@ -88,6 +88,34 @@ def test_keyword_delete_blocked_by_running_task(client):
     assert client.delete(f"/api/keywords/{kid}").status_code == 200
 
 
+def test_keyword_industry_crud(client):
+    resp = client.post("/api/keywords", json={"keyword": "医疗采购", "industry": "08,46,47"})
+    assert resp.status_code == 200
+    assert resp.json()["industry"] == "08,46,47"
+    kid = resp.json()["id"]
+
+    # 非法格式：三位编码
+    resp = client.post("/api/keywords", json={"keyword": "x", "industry": "080"})
+    assert resp.status_code == 422
+    # 非法格式：超过 5 个
+    resp = client.post("/api/keywords", json={"keyword": "y", "industry": "01,02,03,04,05,06"})
+    assert resp.status_code == 422
+    # 空字符串归一为 None
+    resp = client.post("/api/keywords", json={"keyword": "z", "industry": ""})
+    assert resp.json()["industry"] is None
+
+    # 编辑设置
+    resp = client.put(f"/api/keywords/{kid}", json={"industry": "47"})
+    assert resp.status_code == 200
+    assert resp.json()["industry"] == "47"
+    # 未传 industry 不清除已有值
+    resp = client.put(f"/api/keywords/{kid}", json={"city": "020000"})
+    assert resp.json()["industry"] == "47"
+    # 显式置 null 清除筛选
+    resp = client.put(f"/api/keywords/{kid}", json={"industry": None})
+    assert resp.json()["industry"] is None
+
+
 def test_keyword_requires_auth(config):
     init_db(config)
     with SessionLocal() as s:

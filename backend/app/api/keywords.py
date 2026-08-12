@@ -23,7 +23,7 @@ def list_keywords(db=Depends(get_db), user=Depends(get_current_user)):
 def create_keyword(body: KeywordCreate, db=Depends(get_db), user=Depends(get_current_user)):
     if db.query(Keyword).filter_by(keyword=body.keyword, city=body.city).first():
         _raise_dup(body.keyword, body.city)
-    kw = Keyword(keyword=body.keyword, scrape_mode=body.scrape_mode, city=body.city)
+    kw = Keyword(keyword=body.keyword, scrape_mode=body.scrape_mode, city=body.city, industry=body.industry)
     db.add(kw)
     db.commit()
     db.refresh(kw)
@@ -46,6 +46,8 @@ def update_keyword(keyword_id: int, body: KeywordUpdate, db=Depends(get_db), use
         kw.city = new_city
     if body.scrape_mode is not None:
         kw.scrape_mode = body.scrape_mode
+    if "industry" in body.model_fields_set:
+        kw.industry = body.industry
     db.commit()
     db.refresh(kw)
     return kw

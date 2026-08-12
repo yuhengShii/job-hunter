@@ -33,7 +33,7 @@
 ## 4. 数据模型（SQLite）
 
 - **users**：id, username, password_hash, created_at
-- **keywords**：id, keyword, city(51job 城市编码，000000=全国), enabled, scrape_mode(默认抓取方式), last_scraped_at, created_at —— **(keyword, city) 联合唯一**，同一岗位词可分别抓不同城市
+- **keywords**：id, keyword, city(51job 城市编码，000000=全国), enabled, scrape_mode(默认抓取方式), industry(逗号分隔行业编码，NULL=不过滤), last_scraped_at, created_at —— **(keyword, city) 联合唯一**，同一岗位词可分别抓不同城市
 - **scrape_tasks**：id, keyword_id, mode, status(排队/进行中/成功/失败/部分成功), total_pages, total_found, success_count, failed_count, last_page(已抓到的最大页号), start_time, end_time, error_message, created_at
 - **jobs**（job_id 唯一，覆盖更新）：id, job_id, title, salary_raw, salary_min, salary_max, city, district, area, degree(学历), year(工作年限), tags(JSON), publish_time, source, company_id, job_url, created_at, updated_at
 - **companies**（company_id 唯一）：id, company_id, name, type(民营/国企/外企), industry, size, activity, activity_score(0-10 活跃值，-1=未知，由 activity 文案按固定规则映射，规则见 §6), created_at, updated_at
@@ -43,6 +43,7 @@
 
 说明：
 - city 使用 51job 6 位城市编码（如 010000 北京 / 020000 上海 / 030200 广州 / 040000 深圳 / 080200 杭州 / 170200 郑州），000000 表示全国；前端维护编码表，后端仅存编码。
+- industry 为 51job 行业字典叶子编码（如 47=医疗设备/器械），逗号分隔多选，最多 5 个（与搜索页"其他筛选"行为一致）；空串与 NULL 均视为不过滤；行业筛选通过搜索 URL 的 `industry` 参数生效（SPA 读取该参数并透传搜索 API，翻页保持）。
 - salary_raw 解析为 salary_min/max，规则枚举：`8千-1.2万`→8000/12000、`1.5-2万/月`→15000/20000、`15-20K`→15000/20000、`年薪20-30万`→按年折算、`面议`→NULL（统计时跳过），无法解析的格式记入 error 日志并置 NULL。
 - tags：优先取 sensorsdata 的 jobLabel，为空时走 DOM 兜底，仍无则存空数组。
 - degree/year：优先取 sensorsdata 的 jobDegree/jobYear，缺失时按卡片文本中"本科/大专/硕士…"与"N年及以上/N-M年…"关键词兜底，仍无则 NULL（历史数据无法回填，重抓后补齐）。
@@ -58,7 +59,7 @@
 除 `POST /api/auth/login` 外，所有接口均需携带 JWT（`Authorization: Bearer`）。
 
 - 认证：`POST /api/auth/login`、`GET /api/auth/me`
-- 关键字：`GET/POST /api/keywords`（POST 支持 `keyword`、`city`，缺省 000000）、`PUT/DELETE /api/keywords/{id}`、`POST /api/keywords/{id}/toggle`
+- 关键字：`GET/POST /api/keywords`（POST 支持 `keyword`、`city`，缺省 000000、`industry`，缺省 NULL=不过滤）、`PUT/DELETE /api/keywords/{id}`、`POST /api/keywords/{id}/toggle`
   - 唯一性：同 keyword 不同 city 可共存；同 keyword 同 city 返回 409
 - 任务：`POST /api/tasks`、`GET /api/tasks`、`GET /api/tasks/{id}`、`DELETE /api/tasks/{id}`
   - `POST /api/tasks` 请求参数：`keyword_id`、`mode`（可选，默认取 keywords.scrape_mode）、`max_pages`（可选，默认取配置，需 ≤ 全局上限）
@@ -69,10 +70,10 @@
 
 ## 6. 抓取模块（v1 Playwright）
 
-- `Scraper` 抽象接口：`search(keyword, pages, area)` 逐页产出解析结果。
+- `Scraper` 抽象接口：`search(keyword, pages, area, industry)` 逐页产出解析结果。
 - PlaywrightScraper 实现：
   - 无头 Chromium 访问 51job 搜索页并翻页，遍历所有页（单任务最大页数可配置）。
-  - 搜索 URL 携带 `jobArea={area}`（来自 keywords.city），不指定时默认 000000（51job 站点默认上海，注意区分）。
+  - 搜索 URL 携带 `jobArea={area}`（来自 keywords.city），不指定时默认 000000（51job 站点默认上海，注意区分）；`industry`（来自 keywords.industry）存在时追加 `&industry={编码}` 参数（SPA 读取该参数透传搜索 API，翻页保持）。
   - 优先解析 HTML 中 `sensorsdata` 属性（jobId/jobTitle/jobSalary/jobArea/companyId 等，见 tt.py 样例），缺失字段走 DOM 选择器兜底。
   - activity_score 映射规则：`刚刚活跃`→10、`今日回复10+次`→10、`今日回复N次`→min(N,10)（受 0-10 刻度约束，N>10 时截断为 10）、`今日活跃`→9、`N分钟前回复`/`N分钟前处理简历`→max(0, 10-⌈N/2⌉)（1 分钟→10）、`回复率高`→8、`简历处理快`→7、`喜欢聊天`→6、`N天内处理简历`/活跃天数`N天`→max(1, 11-N)；多标签取各标签最高分，全部无法识别或为空记 -1。
   - 反爬策略：随机延时（3-8 秒）、模拟滚动、User-Agent 轮换、反自动化指纹（`--disable-blink-features=AutomationControlled` + init script 抹除 navigator.webdriver 等）；失败页重试 3 次后跳过并记失败。

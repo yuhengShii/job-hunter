@@ -13,13 +13,15 @@ class FakeScraper:
         self.pages_arg: int | None = None
         self.area_arg: str | None = None
         self.keyword_arg: str | None = None
+        self.industry_arg: str | None = None
         self.search_results: list[PageResult] = []
         self.raise_on_search: Exception | None = None
 
-    async def search(self, keyword, pages, area="000000"):
+    async def search(self, keyword, pages, area="000000", industry=None):
         self.keyword_arg = keyword
         self.pages_arg = pages
         self.area_arg = area
+        self.industry_arg = industry
         if self.raise_on_search:
             raise self.raise_on_search
         for r in self.search_results:
@@ -118,3 +120,31 @@ def test_execute_task_exception_marks_failed(config, monkeypatch):
         assert t.status == TaskStatus.FAILED.value
         assert "boom" in (t.error_message or "")
         assert t.end_time is not None
+
+
+def test_execute_task_passes_industry(config, monkeypatch):
+    init_db(config)
+    fake = FakeScraper()
+    fake.search_results = [PageResult(page_num=1, jobs=[JobDraft(job_id="j1", title="t1")])]
+    _patch(monkeypatch, fake, config)
+    with SessionLocal() as s:
+        kw = Keyword(keyword="医疗采购", industry="47")
+        s.add(kw)
+        s.commit()
+        kw_id = kw.id
+        task = ScrapeTask(keyword_id=kw_id, status=TaskStatus.QUEUED.value)
+        s.add(task)
+        s.commit()
+        task_id = task.id
+    asyncio.run(task_runner.execute_task(task_id))
+    assert fake.industry_arg == "47"
+
+
+def test_execute_task_industry_none_when_unset(config, monkeypatch):
+    init_db(config)
+    fake = FakeScraper()
+    fake.search_results = [PageResult(page_num=1, jobs=[JobDraft(job_id="j1", title="t1")])]
+    _patch(monkeypatch, fake, config)
+    task_id, _ = _seed_task(config.db_path)
+    asyncio.run(task_runner.execute_task(task_id))
+    assert fake.industry_arg is None

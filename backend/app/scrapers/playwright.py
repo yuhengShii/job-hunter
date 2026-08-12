@@ -16,6 +16,15 @@ logger = logging.getLogger("job_hunter")
 _SEARCH_URL = (
     "https://we.51job.com/pc/search?keyword={kw}&searchType=2&sortType=0&pageNum={n}&jobArea={area}"
 )
+
+
+def build_search_url(
+    keyword: str, page_num: int, area: str, industry: str | None = None
+) -> str:
+    url = _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
+    if industry:
+        url += f"&industry={quote(industry)}"
+    return url
 _JOB_CARD_SELECTOR = ".joblist-item"
 _MAX_RETRIES = 3
 _CAPTCHA_COOLDOWN = 90
@@ -75,7 +84,7 @@ class PlaywrightScraper(Scraper):
         return True
 
     async def search(
-        self, keyword: str, pages: int, area: str = "000000"
+        self, keyword: str, pages: int, area: str = "000000", industry: str | None = None
     ) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
         page = await self._new_page()
@@ -85,7 +94,7 @@ class PlaywrightScraper(Scraper):
         try:
             n = 1
             while n <= pages:
-                result, page = await self._fetch_page(page, keyword, n, area)
+                result, page = await self._fetch_page(page, keyword, n, area, industry)
                 if not result.failed and result.jobs and last_ids is not None:
                     ids = {j.job_id for j in result.jobs}
                     if ids == last_ids:
@@ -103,7 +112,7 @@ class PlaywrightScraper(Scraper):
                         consecutive_failures = 0
                         logger.warning("滑块验证未通过，冷却 %s 秒后重试: page=%s", _CAPTCHA_COOLDOWN, n)
                         await asyncio.sleep(_CAPTCHA_COOLDOWN)
-                        result, page = await self._fetch_page(page, keyword, n, area)
+                        result, page = await self._fetch_page(page, keyword, n, area, industry)
                         if result.failed:
                             consecutive_captcha += 1
                             logger.warning("第 %s 页抓取失败（冷却重试仍失败）: keyword=%s", n, keyword)
@@ -117,7 +126,7 @@ class PlaywrightScraper(Scraper):
                         consecutive_failures = 0
                         degraded = await self._degrade_to_headful()
                         if degraded:
-                            result, page = await self._fetch_page(page, keyword, n, area)
+                            result, page = await self._fetch_page(page, keyword, n, area, industry)
                         if result.failed:
                             logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
                         else:
@@ -127,7 +136,7 @@ class PlaywrightScraper(Scraper):
                         consecutive_failures += 1
                         degraded = consecutive_failures >= 2 and await self._degrade_to_headful()
                         if degraded:
-                            result, page = await self._fetch_page(page, keyword, n, area)
+                            result, page = await self._fetch_page(page, keyword, n, area, industry)
                         if result.failed:
                             logger.warning("第 %s 页抓取失败（已重试）: keyword=%s", n, keyword)
                             if consecutive_failures >= 3:
@@ -156,7 +165,7 @@ class PlaywrightScraper(Scraper):
         await page.wait_for_timeout(800)
 
     async def _fetch_page(
-        self, page, keyword: str, page_num: int, area: str = "000000"
+        self, page, keyword: str, page_num: int, area: str = "000000", industry: str | None = None
     ) -> tuple:
         await self._ensure_browser()
         last_result: PageResult | None = None
@@ -166,7 +175,7 @@ class PlaywrightScraper(Scraper):
                     if page.is_closed():
                         page = await self._new_page()
                         logger.warning("第 %s 页浏览器已重建，回退为 URL 加载", page_num)
-                    url = _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
+                    url = build_search_url(keyword, page_num, area, industry)
                     await page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 else:
                     await self._click_next_page(page, page_num)

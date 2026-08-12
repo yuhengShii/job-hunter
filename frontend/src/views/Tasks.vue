@@ -14,6 +14,9 @@
             <el-table-column label="地区" width="90">
               <template #default="{ row }">{{ cityName(row.city) }}</template>
             </el-table-column>
+            <el-table-column label="行业筛选" min-width="150">
+              <template #default="{ row }">{{ industryNames(row.industry) }}</template>
+            </el-table-column>
             <el-table-column label="启用" width="80">
               <template #default="{ row }">
                 <el-switch :model-value="row.enabled" @change="toggle(row)" />
@@ -127,6 +130,16 @@
             <el-option v-for="c in CITY_OPTIONS" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
+        <el-form-item label="行业筛选">
+          <el-cascader
+            v-model="keywordDialog.industry"
+            :options="INDUSTRY_TREE"
+            :props="{ multiple: true, emitPath: false, limit: 5, collapseTags: true }"
+            clearable
+            style="width: 100%"
+            placeholder="不限（最多 5 个）"
+          />
+        </el-form-item>
         <el-form-item label="抓取方式">
           <el-select v-model="keywordDialog.scrape_mode" style="width: 100%">
             <el-option label="Playwright" value="playwright" />
@@ -149,6 +162,7 @@ import { tasksApi, type TaskOut } from '@/api/tasks'
 import { settingsApi, type ScheduleOut } from '@/api/settings'
 import { useKeywordsStore } from '@/stores/keywords'
 import { CITY_OPTIONS, cityName } from '@/utils/cities'
+import { INDUSTRY_TREE, industryNames } from '@/utils/industries'
 import { formatTime, taskStatusText, taskStatusType } from '@/utils/format'
 
 const keywordsStore = useKeywordsStore()
@@ -171,6 +185,7 @@ const keywordDialog = reactive({
   keyword: '',
   city: '000000',
   scrape_mode: 'playwright',
+  industry: [] as string[],
 })
 
 let pollTimer: number | undefined
@@ -251,6 +266,7 @@ function openCreate() {
   keywordDialog.keyword = ''
   keywordDialog.city = '000000'
   keywordDialog.scrape_mode = 'playwright'
+  keywordDialog.industry = []
   keywordDialog.visible = true
 }
 
@@ -260,6 +276,7 @@ function openEdit(row: KeywordOut) {
   keywordDialog.keyword = row.keyword
   keywordDialog.city = row.city
   keywordDialog.scrape_mode = row.scrape_mode
+  keywordDialog.industry = row.industry ? row.industry.split(',') : []
   keywordDialog.visible = true
 }
 
@@ -270,17 +287,20 @@ async function saveKeyword() {
     return
   }
   try {
+    const industry = keywordDialog.industry.length ? keywordDialog.industry.join(',') : null
     if (keywordDialog.editing) {
       await keywordsApi.update(keywordDialog.id, {
         keyword: kw,
         city: keywordDialog.city,
         scrape_mode: keywordDialog.scrape_mode,
+        industry,
       })
     } else {
       await keywordsApi.create({
         keyword: kw,
         city: keywordDialog.city,
         scrape_mode: keywordDialog.scrape_mode,
+        industry,
       })
     }
     keywordDialog.visible = false

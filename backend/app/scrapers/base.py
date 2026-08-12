@@ -46,9 +46,10 @@ class PageResult:
 class Scraper(ABC):
     @abstractmethod
     async def search(
-        self, keyword: str, pages: int, area: str = "000000"
+        self, keyword: str, pages: int, area: str = "000000", industry: str | None = None
     ) -> AsyncGenerator[PageResult, None]:
-        """按关键字搜索职位。area 为 51job 城市编码（000000 = 全国）。"""
+        """按关键字搜索职位。area 为 51job 城市编码（000000 = 全国）；
+        industry 为逗号分隔行业编码（如 "08,46,47"，None=不过滤）。"""
         ...
 
     @abstractmethod
