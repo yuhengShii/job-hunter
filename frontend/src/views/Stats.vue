@@ -30,7 +30,12 @@
     <el-card class="chart-card">
       <template #header>
         <div class="chart-header">
-          <span>薪资分布（中位薪资）</span>
+          <span>薪资分布（{{ salaryMetricLabel }}）</span>
+          <el-radio-group v-model="salaryMetric" size="small">
+            <el-radio-button value="median">中位数</el-radio-button>
+            <el-radio-button value="median_max">最高工资</el-radio-button>
+            <el-radio-button value="median_min">最低工资</el-radio-button>
+          </el-radio-group>
         </div>
       </template>
       <div ref="salaryEl" class="chart" />
@@ -145,6 +150,15 @@ const jumpDate = ref('')
 const jumpRegion = ref('')
 const jumpKeyword = ref('')
 
+type SalaryMetric = 'median' | 'median_max' | 'median_min'
+const salaryMetric = ref<SalaryMetric>('median')
+const SALARY_METRIC_LABELS: Record<SalaryMetric, string> = {
+  median: '中位薪资',
+  median_max: '最高工资',
+  median_min: '最低工资',
+}
+const salaryMetricLabel = computed(() => SALARY_METRIC_LABELS[salaryMetric.value])
+
 const salaryOption = computed<EChartsOption>(() => {
   const items = salary.value?.items ?? []
   return {
@@ -152,7 +166,7 @@ const salaryOption = computed<EChartsOption>(() => {
     grid: { left: 90, right: 24, top: 40, bottom: 80 },
     xAxis: { type: 'category', data: items.map((i) => i.key), axisLabel: { interval: 0, rotate: 30 } },
     yAxis: { type: 'value', name: '元' },
-    series: [{ type: 'bar', data: items.map((i) => i.median), barMaxWidth: 40 }],
+    series: [{ type: 'bar', data: items.map((i) => i[salaryMetric.value]), barMaxWidth: 40 }],
   }
 })
 

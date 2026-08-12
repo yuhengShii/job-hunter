@@ -38,26 +38,31 @@ def overview(db: Session, window: datetime | None) -> dict:
     }
 
 
+def _median(values: list[int]) -> int:
+    ordered = sorted(values)
+    n = len(ordered)
+    if n % 2 == 1:
+        return ordered[n // 2]
+    return (ordered[n // 2 - 1] + ordered[n // 2]) // 2
+
+
 def salary_stats(db: Session, window: datetime | None, group_by: str = "city") -> dict:
     jobs = [j for j in _windowed_jobs(db, window).all() if j.salary_min is not None and j.salary_max is not None]
-    groups: dict[str, list[int]] = {}
+    groups: dict[str, list[tuple[int, int]]] = {}
     for j in jobs:
         key = getattr(j, group_by, None) or "未知"
-        groups.setdefault(key, []).append((j.salary_min + j.salary_max) // 2)
+        groups.setdefault(key, []).append((j.salary_min, j.salary_max))
     result = []
-    for key, mids in sorted(groups.items()):
-        ordered = sorted(mids)
-        n = len(ordered)
-        if n % 2 == 1:
-            median = ordered[n // 2]
-        else:
-            median = (ordered[n // 2 - 1] + ordered[n // 2]) // 2
+    for key, pairs in sorted(groups.items()):
+        mids = [(a + b) // 2 for a, b in pairs]
         result.append({
             "key": key,
-            "count": n,
+            "count": len(pairs),
             "min": min(mids),
             "max": max(mids),
-            "median": median,
+            "median": _median(mids),
+            "median_max": _median([b for _, b in pairs]),
+            "median_min": _median([a for a, _ in pairs]),
         })
     return {"group_by": group_by, "items": result}
 

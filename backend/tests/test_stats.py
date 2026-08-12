@@ -96,6 +96,32 @@ def test_salary_median_even_sample(config):
         assert item["median"] == 40000
 
 
+def test_salary_median_max_min(config):
+    _seed(config)
+    with SessionLocal() as s:
+        window = get_window_start(s)
+        base = datetime.now()
+        s.add_all([
+            Job(job_id="e1", title="t", salary_min=8000, salary_max=12000, city="偶数组", updated_at=base),
+            Job(job_id="e2", title="t", salary_min=15000, salary_max=25000, city="偶数组", updated_at=base),
+            Job(job_id="e3", title="t", salary_min=9000, salary_max=15000, city="偶数组", updated_at=base),
+            Job(job_id="e4", title="t", salary_min=20000, salary_max=30000, city="偶数组", updated_at=base),
+            Job(job_id="o1", title="t", salary_min=5000, salary_max=9000, city="奇数组", updated_at=base),
+            Job(job_id="o2", title="t", salary_min=7000, salary_max=13000, city="奇数组", updated_at=base),
+            Job(job_id="o3", title="t", salary_min=10000, salary_max=18000, city="奇数组", updated_at=base),
+        ])
+        s.commit()
+        res = salary_stats(s, window - timedelta(days=1), group_by="city")
+        even = next(i for i in res["items"] if i["key"] == "偶数组")
+        # 偶数样本：salary_max 中位数 = (15000+25000)/2；salary_min 中位数 = (9000+15000)/2
+        assert even["median_max"] == 20000
+        assert even["median_min"] == 12000
+        odd = next(i for i in res["items"] if i["key"] == "奇数组")
+        # 奇数样本：salary_max 中位数 = 13000；salary_min 中位数 = 7000
+        assert odd["median_max"] == 13000
+        assert odd["median_min"] == 7000
+
+
 def test_distribution_window_filter(config):
     _seed(config)
     with SessionLocal() as s:

@@ -13,6 +13,8 @@ export interface SalaryGroup {
   min: number
   max: number
   median: number
+  median_max: number
+  median_min: number
 }
 
 export interface SalaryStats {
