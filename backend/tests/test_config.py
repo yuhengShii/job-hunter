@@ -26,3 +26,22 @@ def test_config_reuse_existing_file(tmp_path):
     assert cfg.auth_username == "me"
     assert cfg.max_pages == 30
     assert cfg.headful is False
+
+
+def test_config_creates_site_secret(tmp_path):
+    cfg = Config(repo_root=tmp_path, config_path=tmp_path / "config.ini", db_path=tmp_path / "test.db")
+    assert len(cfg.site_secret_key) == 32
+
+
+def test_config_backfills_site_secret_on_old_file(tmp_path):
+    path = tmp_path / "config.ini"
+    p = configparser.ConfigParser()
+    p["auth"] = {"username": "me", "password": "pw123", "jwt_secret": "s" * 40}
+    p["scraper"] = {"max_pages": "30", "headful": "false"}
+    with open(path, "w", encoding="utf-8") as f:
+        p.write(f)
+    cfg = Config(repo_root=tmp_path, config_path=path, db_path=tmp_path / "t.db")
+    assert len(cfg.site_secret_key) == 32
+    # 再次读取，secret 已持久化（幂等）
+    cfg2 = Config(repo_root=tmp_path, config_path=path, db_path=tmp_path / "t.db")
+    assert cfg2.site_secret_key == cfg.site_secret_key

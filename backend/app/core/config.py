@@ -29,6 +29,7 @@ class Config:
                 "jwt_secret": secrets.token_urlsafe(32),
             }
             p["scraper"] = {"max_pages": "50", "headful": "false"}
+            p["site"] = {"secret": secrets.token_hex(32)}
             with open(self.config_path, "w", encoding="utf-8") as f:
                 p.write(f)
             logger.warning(
@@ -37,6 +38,11 @@ class Config:
             )
         self._parser = configparser.ConfigParser()
         self._parser.read(self.config_path, encoding="utf-8")
+        # 旧配置文件缺少 [site] 段时补写，幂等
+        if "site" not in self._parser:
+            self._parser["site"] = {"secret": secrets.token_hex(32)}
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                self._parser.write(f)
 
     @property
     def auth_username(self) -> str:
@@ -57,6 +63,10 @@ class Config:
     @property
     def headful(self) -> bool:
         return self._parser.getboolean("scraper", "headful")
+
+    @property
+    def site_secret_key(self) -> bytes:
+        return bytes.fromhex(self._parser["site"]["secret"])
 
     @property
     def database_url(self) -> str:
