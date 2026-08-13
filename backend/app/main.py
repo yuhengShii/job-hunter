@@ -11,6 +11,7 @@ from backend.app.api.deps import ensure_admin, set_current_config
 from backend.app.api.jobs import jobs_router
 from backend.app.api.keywords import keywords_router
 from backend.app.api.settings import settings_router
+from backend.app.api.site_credentials import site_credentials_router
 from backend.app.api.stats import stats_router
 from backend.app.api.tasks import tasks_router
 from backend.app.core.config import REPO_ROOT, Config
@@ -57,7 +58,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app = FastAPI(title="job-hunter", lifespan=lifespan)
     app.add_exception_handler(AppError, app_error_handler)
-    for router in (auth_router, keywords_router, tasks_router, jobs_router, companies_router, stats_router, settings_router):
+    for router in (auth_router, keywords_router, tasks_router, jobs_router, companies_router, stats_router, settings_router, site_credentials_router):
         app.include_router(router)
 
     if not os.environ.get("JOB_HUNTER_TESTING") and FRONTEND_DIST.is_dir():
