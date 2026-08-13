@@ -22,6 +22,7 @@ class JobOut(BaseModel):
     company_name: str | None = None
     company_activity: str | None = None
     company_activity_score: int = -1
+    is_favorite: bool = False
     job_url: str | None
     created_at: datetime
     updated_at: datetime

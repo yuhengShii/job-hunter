@@ -31,7 +31,15 @@ def _parse_sort(sort: list[str]) -> list:
 
 
 def _with_company(jobs: list[Job], db) -> list[JobOut]:
-    """为职位附加公司名称与活跃度（来自 companies 表）。"""
+    """为职位附加公司名称、活跃度与收藏标记。"""
+    fav_ids: set[str] = set()
+    if jobs:
+        fav_ids = {
+            f.job_id
+            for f in db.query(Favorite)
+            .filter(Favorite.job_id.in_([j.job_id for j in jobs]))
+            .all()
+        }
     ids = {j.company_id for j in jobs if j.company_id}
     comp_map = {
         c.company_id: c
@@ -40,6 +48,7 @@ def _with_company(jobs: list[Job], db) -> list[JobOut]:
     out = []
     for j in jobs:
         item = JobOut.model_validate(j)
+        item.is_favorite = j.job_id in fav_ids
         c = comp_map.get(j.company_id)
         if c:
             item.company_name = c.name
@@ -61,6 +70,7 @@ def list_jobs(
     salary_max: int | None = None,
     publish_time_from: date | None = None,
     publish_time_to: date | None = None,
+    favorite: bool | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     sort: list[str] = Query([]),
@@ -90,6 +100,10 @@ def list_jobs(
         # tags 为 JSON 数组（SQLite 存储为转义文本，LIKE 不可靠），用相关 EXISTS + json_each 精确匹配
         tags_tv = func.json_each(Job.tags).table_valued("value")
         q = q.filter(db.query(tags_tv.c.value).filter(tags_tv.c.value == tag).exists())
+    if favorite is True:
+        q = q.filter(Job.job_id.in_(db.query(Favorite.job_id)))
+    elif favorite is False:
+        q = q.filter(~Job.job_id.in_(db.query(Favorite.job_id)))
     orders = _parse_sort(sort)
     needs_company = any(s.startswith("activity_score") for s in sort)
     if needs_company:

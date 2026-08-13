@@ -79,3 +79,38 @@ def test_favorites_require_auth(config):
     with TestClient(app) as c:
         assert c.post("/api/jobs/favorites", json={"job_ids": ["j1"]}).status_code == 401
         assert c.request("DELETE", "/api/jobs/favorites", json={"job_ids": ["j1"]}).status_code == 401
+
+
+def test_list_is_favorite_flag(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j1", "j3"]})
+    resp = client.get("/api/jobs", params={"page_size": 100})
+    flags = {i["job_id"]: i["is_favorite"] for i in resp.json()["items"]}
+    assert flags == {"j1": True, "j2": False, "j3": True, "j4": False}
+
+
+def test_filter_favorite_true(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j1"]})
+    resp = client.get("/api/jobs", params={"favorite": "true"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["job_id"] == "j1"
+
+
+def test_filter_favorite_false(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j1"]})
+    resp = client.get("/api/jobs", params={"favorite": "false"})
+    assert resp.json()["total"] == 3
+    assert {i["job_id"] for i in resp.json()["items"]} == {"j2", "j3", "j4"}
+
+
+def test_filter_favorite_with_other_filters(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j1"]})
+    resp = client.get("/api/jobs", params={"favorite": "true", "city": "上海"})
+    assert resp.json()["total"] == 1
+
+
+def test_detail_is_favorite(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j2"]})
+    resp = client.get("/api/jobs/j1")
+    assert resp.json()["is_favorite"] is False
+    resp = client.get("/api/jobs/j2")
+    assert resp.json()["is_favorite"] is True
