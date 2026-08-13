@@ -37,3 +37,12 @@ class JobPage(BaseModel):
 class JobFilterOptions(BaseModel):
     cities: list[str]
     districts: list[str]
+
+
+class FavoriteBatchIn(BaseModel):
+    job_ids: list[str]
+
+
+class FavoriteBatchOut(BaseModel):
+    added: int = 0
+    skipped: int = 0
