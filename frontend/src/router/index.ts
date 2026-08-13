@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'jobs', component: () => import('@/views/Jobs.vue'), meta: { title: '职位列表' } },
         { path: 'companies', component: () => import('@/views/Companies.vue'), meta: { title: '公司列表' } },
         { path: 'stats', component: () => import('@/views/Stats.vue'), meta: { title: '统计看板' } },
+        { path: 'credentials', component: () => import('@/views/SiteCredentials.vue'), meta: { title: '站点账号' } },
       ],
     },
   ],
