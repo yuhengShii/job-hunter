@@ -7,9 +7,13 @@ from backend.app.scrapers.captcha import solve_aliyun_captcha
 logger = logging.getLogger("job_hunter")
 
 _LOGIN_URL = "https://login.51job.com/login.php?lang=c"
-_USER_INPUT = "input[placeholder*='手机号'], input[name='phone'], input[type='tel']"
-_PASS_INPUT = "input[placeholder*='密码'], input[type='password']"
-_SUBMIT = "button[type='submit'], .login-btn, button:has-text('登 录'), button:has-text('登录')"
+# 实测（2026-08）：登录页默认「手机号 + 短信验证码」模式，需先点「密码登录」tab 才出现密码框；
+# 提交前需点击协议同意 label（#isread 隐藏 checkbox）；提交按钮为 div#SmsLoginBtn
+_USER_INPUT = "#loginname"
+_PASS_INPUT = "#password"
+_PASSWORD_TAB = "span.loginway"
+_AGREE_LABEL = "label"
+_SUBMIT = "#SmsLoginBtn, button:has-text('登录')"
 
 
 async def login(page: Page, site: str, username: str, password: str) -> bool:
@@ -20,6 +24,13 @@ async def login(page: Page, site: str, username: str, password: str) -> bool:
     try:
         await page.goto(_LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(1500)
+        pwd_input = page.locator(_PASS_INPUT)
+        if await pwd_input.count() == 0:
+            await page.locator(_PASSWORD_TAB, has_text="密码登录").first.click(timeout=15000)
+            await pwd_input.first.wait_for(state="visible", timeout=15000)
+        agree = page.locator(_AGREE_LABEL, has_text="我已阅读并同意").first
+        if await agree.count() > 0:
+            await agree.click(timeout=5000)
         await page.locator(_USER_INPUT).first.fill(username)
         await page.locator(_PASS_INPUT).first.fill(password)
         await page.locator(_SUBMIT).first.click(timeout=15000)

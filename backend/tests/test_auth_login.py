@@ -18,15 +18,25 @@ class _FakeLocator:
     async def count(self):
         return 0  # 滑块/嵌入容器均不存在 → solve_aliyun_captcha 视为已通过
 
+    async def wait_for(self, state=None, timeout=None):
+        pass
+
 
 class _FakePage:
     def __init__(self, url_after="https://we.51job.com/pc/index"):
         self._url = url_after
         self.locators = {}
+        self.loginway_clicked = False
+        self.agree_clicked = False
 
-    def locator(self, sel):
+    def locator(self, sel, **kw):
         if sel not in self.locators:
-            self.locators[sel] = _FakeLocator()
+            loc = _FakeLocator()
+            if kw.get("has_text") == "密码登录":
+                self.loginway_clicked = True
+            if kw.get("has_text") == "我已阅读并同意":
+                self.agree_clicked = True
+            self.locators[sel] = loc
         return self.locators[sel]
 
     async def goto(self, url, **kw):
@@ -48,8 +58,10 @@ def test_login_success_fills_credentials():
     page = _FakePage(url_after="https://we.51job.com/pc/index")
     assert _run(login(page, "51job", "13800000000", "pw123")) is True
     assert page.goto_url == "https://login.51job.com/login.php?lang=c"
-    assert page.locators["input[placeholder*='手机号'], input[name='phone'], input[type='tel']"].filled == "13800000000"
-    assert page.locators["input[placeholder*='密码'], input[type='password']"].filled == "pw123"
+    assert page.locators["#loginname"].filled == "13800000000"
+    assert page.locators["#password"].filled == "pw123"
+    assert page.loginway_clicked is True  # 默认短信模式，已点击「密码登录」tab
+    assert page.agree_clicked is True  # 已点击协议同意（隐藏 checkbox 的 label）
 
 
 def test_login_failure_stays_on_login_page():
