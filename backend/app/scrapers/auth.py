@@ -20,8 +20,14 @@ async def _login_error_hint(page: Page) -> str:
     """采集登录页上的错误/验证码提示文本，用于失败日志诊断。"""
     try:
         hints = await page.evaluate("""() => {
+            const errs = [];
+            for (const el of document.querySelectorAll('[class*=error], [class*=tip], [class*=warn]')) {
+                const t = (el.innerText || '').trim();
+                if (t && t.length < 120) errs.push(t);
+            }
+            if (errs.length) return [...new Set(errs)].slice(0, 3);
             const t = document.body ? document.body.innerText : '';
-            const keys = ['验证', '错误', '密码', '帐号', '不存在', '超时', '勾选'];
+            const keys = ['验证', '错误', '密码', '帐号', '不存在', '超时'];
             const found = [];
             for (const k of keys) {
                 const i = t.indexOf(k);
