@@ -63,7 +63,8 @@
 
 - `POST /api/tasks` 新增可选参数 `login_credential_id`（缺省取全局默认 `scraper_login`，默认关闭则为空）。
 - `GET /api/tasks`、`GET /api/tasks/{id}` 响应附带 `login_credential_id` 及关联 `username`（便于界面显示"已登录抓取"标记）。
-- 删除凭据时：进行中任务引用 → 409；已完成任务引用 → 置 NULL。
+- 删除凭据时：**进行中/排队中任务引用 → 409**；已完成/失败任务引用 → 置 NULL。
+- PUT 仅可改 `remark` 与 `password`，`site`/`username` 不可改（改则删后重建）。
 
 ## 5. 抓取登录流程
 
