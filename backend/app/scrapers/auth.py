@@ -16,6 +16,24 @@ _AGREE_LABEL = "label"
 _SUBMIT = "#SmsLoginBtn, button:has-text('登录')"
 
 
+async def _login_error_hint(page: Page) -> str:
+    """采集登录页上的错误/验证码提示文本，用于失败日志诊断。"""
+    try:
+        hints = await page.evaluate("""() => {
+            const t = document.body ? document.body.innerText : '';
+            const keys = ['验证', '错误', '密码', '帐号', '不存在', '超时', '勾选'];
+            const found = [];
+            for (const k of keys) {
+                const i = t.indexOf(k);
+                if (i >= 0) found.push(t.slice(Math.max(0, i - 12), i + 24).replace(/\\s+/g, ' ').trim());
+            }
+            return [...new Set(found)].slice(0, 5);
+        }""")
+        return " | ".join(hints)
+    except Exception:
+        return ""
+
+
 async def login(page: Page, site: str, username: str, password: str) -> bool:
     """登录招聘网站。成功返回 True；失败/验证码未过/异常返回 False（不抛出）。"""
     if site != "51job":
@@ -38,6 +56,11 @@ async def login(page: Page, site: str, username: str, password: str) -> bool:
         await solve_aliyun_captcha(page)
         await page.wait_for_timeout(2000)
         if "login.51job.com" in page.url:
+            hint = await _login_error_hint(page)
+            logger.warning(
+                "站点登录失败: site=%s username=%s hint=%s url=%s",
+                site, username, hint, page.url,
+            )
             return False
         logger.info("站点登录成功: site=%s username=%s", site, username)
         return True
