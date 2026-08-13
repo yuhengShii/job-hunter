@@ -1,79 +1,15 @@
 <template>
   <div>
-    <el-card class="filter-card">
-      <el-form inline>
-        <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="职位/地区包含" style="width: 180px" @keyup.enter="search" />
-        </el-form-item>
-        <el-form-item label="城市">
-          <el-select v-model="query.city" clearable placeholder="全部" style="width: 140px" @change="onCityChange">
-            <el-option v-for="c in cityOptions" :key="c" :label="c" :value="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="区域">
-          <el-select v-model="query.district" clearable placeholder="全部" style="width: 140px" :disabled="districtOptions.length === 0" @change="search">
-            <el-option v-for="d in districtOptions" :key="d" :label="d" :value="d" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="地区">
-          <el-input v-model="query.area" clearable placeholder="如 上海-长宁区" style="width: 160px" @keyup.enter="search" />
-        </el-form-item>
-        <el-form-item label="公司">
-          <el-input v-model="query.company_id" clearable placeholder="公司 ID" style="width: 160px" @keyup.enter="search" />
-        </el-form-item>
-        <el-form-item label="标签">
-          <el-input v-model="query.tag" clearable style="width: 140px" @keyup.enter="search" />
-        </el-form-item>
-        <el-form-item label="收藏">
-          <el-select v-model="query.favorite" style="width: 120px" @change="search">
-            <el-option label="全部" value="" />
-            <el-option label="已收藏" value="yes" />
-            <el-option label="未收藏" value="no" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="薪资区间">
-          <el-input-number v-model="query.salary_min" :min="0" :step="1000" placeholder="最低" @change="search" />
-          <span class="sep">~</span>
-          <el-input-number v-model="query.salary_max" :min="0" :step="1000" placeholder="最高" @change="search" />
-        </el-form-item>
-        <el-form-item label="排序">
-          <el-select v-model="query.primary_sort" style="width: 130px" @change="search">
-            <el-option label="默认" value="" />
-            <el-option label="活跃值" value="activity_score" />
-            <el-option label="发布时间" value="publish_time" />
-          </el-select>
-          <el-select v-model="query.primary_dir" style="width: 90px" :disabled="!query.primary_sort" @change="search">
-            <el-option label="降序" value="desc" />
-            <el-option label="升序" value="asc" />
-          </el-select>
-          <span class="sep">+</span>
-          <el-select v-model="query.secondary_sort" style="width: 130px" :disabled="!query.primary_sort" @change="search">
-            <el-option label="无" value="" />
-            <el-option label="活跃值" value="activity_score" />
-            <el-option label="发布时间" value="publish_time" />
-          </el-select>
-          <el-select v-model="query.secondary_dir" style="width: 90px" :disabled="!query.primary_sort" @change="search">
-            <el-option label="降序" value="desc" />
-            <el-option label="升序" value="asc" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="发布时间">
-          <el-date-picker
-            v-model="publishRange"
-            type="daterange"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-            :shortcuts="dateShortcuts"
-            style="width: 240px"
-            @change="search"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="search">查询</el-button>
-          <el-button @click="reset">重置</el-button>
-        </el-form-item>
-      </el-form>
+    <el-card v-if="!isMobile" class="filter-card">
+      <JobFilters
+        mode="inline"
+        :state="query"
+        :city-options="cityOptions"
+        :district-options="districtOptions"
+        @search="search"
+        @reset="reset"
+        @city-change="onCityChange"
+      />
     </el-card>
 
     <el-card>
@@ -155,9 +91,12 @@ import { jobsApi, type JobOut, type JobPage, type JobQuery } from '@/api/jobs'
 import { formatSalaryRaw, formatTime } from '@/utils/format'
 import { favoriteParam, jobsStateFromRoute } from '@/utils/jobsQuery'
 import JobDetailDialog from '@/components/JobDetailDialog.vue'
+import JobFilters, { createDefaultJobFilterState, type JobFilterState } from './JobFilters.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const route = useRoute()
 const router = useRouter()
+const isMobile = useIsMobile()
 
 const loading = ref(false)
 const page = ref<JobPage>({ total: 0, items: [] })
@@ -165,55 +104,9 @@ const detailVisible = ref(false)
 const detailJob = ref<JobOut | null>(null)
 const cityOptions = ref<string[]>([])
 const districtOptions = ref<string[]>([])
-const publishRange = ref<[string, string] | null>(null)
 const selection = ref<JobOut[]>([])
 
-function daysAgo(n: number): Date {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d
-}
-
-const dateShortcuts: Array<{ text: string; value: () => [Date, Date] }> = [
-  { text: '今天', value: () => [new Date(), new Date()] },
-  { text: '近7天', value: () => [daysAgo(6), new Date()] },
-  { text: '近30天', value: () => [daysAgo(29), new Date()] },
-  { text: '近90天', value: () => [daysAgo(89), new Date()] },
-]
-
-const query = reactive<{
-  page: number
-  page_size: number
-  keyword: string
-  city: string
-  district: string
-  area: string
-  company_id: string
-  tag: string
-  favorite: '' | 'yes' | 'no'
-  salary_min: number | undefined
-  salary_max: number | undefined
-  primary_sort: '' | 'activity_score' | 'publish_time'
-  primary_dir: 'asc' | 'desc'
-  secondary_sort: '' | 'activity_score' | 'publish_time'
-  secondary_dir: 'asc' | 'desc'
-}>({
-  page: 1,
-  page_size: 20,
-  keyword: '',
-  city: '',
-  district: '',
-  area: '',
-  company_id: '',
-  tag: '',
-  favorite: '',
-  salary_min: undefined,
-  salary_max: undefined,
-  primary_sort: '',
-  primary_dir: 'desc',
-  secondary_sort: '',
-  secondary_dir: 'desc',
-})
+const query = reactive<JobFilterState>(createDefaultJobFilterState())
 
 async function load() {
   loading.value = true
@@ -229,9 +122,9 @@ async function load() {
     if (fav !== undefined) params.favorite = fav
     if (query.salary_min != null) params.salary_min = query.salary_min
     if (query.salary_max != null) params.salary_max = query.salary_max
-    if (publishRange.value) {
-      params.publish_time_from = publishRange.value[0]
-      params.publish_time_to = publishRange.value[1]
+    if (query.publishRange) {
+      params.publish_time_from = query.publishRange[0]
+      params.publish_time_to = query.publishRange[1]
     }
     if (query.primary_sort) {
       params.sort = [`${query.primary_sort}:${query.primary_dir}`]
@@ -267,20 +160,7 @@ function search() {
 }
 
 function reset() {
-  query.keyword = ''
-  query.city = ''
-  query.district = ''
-  query.area = ''
-  query.company_id = ''
-  query.tag = ''
-  query.favorite = ''
-  query.salary_min = undefined
-  query.salary_max = undefined
-  query.primary_sort = ''
-  query.primary_dir = 'desc'
-  query.secondary_sort = ''
-  query.secondary_dir = 'desc'
-  publishRange.value = null
+  Object.assign(query, createDefaultJobFilterState())
   router.replace({ path: '/jobs' })
   loadFilterOptions()
   search()
@@ -351,7 +231,7 @@ onMounted(() => {
   query.district = s.district
   query.area = s.area
   query.keyword = s.keyword
-  publishRange.value = s.publishRange
+  query.publishRange = s.publishRange
   loadFilterOptions()
   load()
 })
