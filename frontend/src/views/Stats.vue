@@ -5,12 +5,12 @@
         v-model="keywordId"
         placeholder="全部关键字"
         clearable
-        style="width: 240px"
+        :style="selStyle('240px')"
         @change="reload"
       >
         <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="kw.keyword" :value="kw.id" />
       </el-select>
-      <el-select v-model="groupBy" style="width: 140px; margin-left: 16px" @change="reload">
+      <el-select v-model="groupBy" :style="selStyle('140px', true)" @change="reload">
         <el-option label="全部" value="all" />
         <el-option label="按城市" value="city" />
         <el-option label="按区域" value="district" />
@@ -19,7 +19,7 @@
     </el-card>
 
     <el-row :gutter="16" class="cards-row">
-      <el-col :span="6" v-for="card in cards" :key="card.label">
+      <el-col :span="6" :xs="12" v-for="card in cards" :key="card.label">
         <el-card>
           <div class="card-num">{{ card.value }}</div>
           <div class="card-label">{{ card.label }}</div>
@@ -51,7 +51,7 @@
     </el-card>
 
     <el-row :gutter="16" class="charts-row">
-      <el-col :span="8" v-for="pie in pies" :key="pie.title">
+      <el-col :span="8" :xs="24" v-for="pie in pies" :key="pie.title">
         <el-card class="chart-card">
           <template #header>
             <div class="chart-header">
@@ -115,9 +115,16 @@ import type { EChartsOption } from 'echarts'
 import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult } from '@/api/stats'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { trendDisplay } from '@/utils/trend'
 
 const router = useRouter()
+const isMobile = useIsMobile()
+
+function selStyle(desktopPx: string, withGap = false) {
+  if (isMobile.value) return { width: '100%' }
+  return { width: desktopPx, ...(withGap ? { marginLeft: '16px' } : {}) }
+}
 
 const keywordsStore = useKeywordsStore()
 const keywordId = ref<number | null>(null)
@@ -392,8 +399,11 @@ onMounted(async () => {
 .filter-card { margin-bottom: 16px; }
 .cards-row { margin-bottom: 16px; }
 .chart-card { margin-bottom: 16px; }
-.chart-header { display: flex; justify-content: space-between; align-items: center; }
+.chart-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 .chart { height: 340px; }
+@media (max-width: 768px) {
+  .chart { height: 260px; }
+}
 .pie-legend {
   margin-top: 8px;
   max-height: 150px;
