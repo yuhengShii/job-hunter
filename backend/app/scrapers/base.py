@@ -43,6 +43,13 @@ class PageResult:
     captcha: bool = False
 
 
+@dataclass
+class LoginCredential:
+    site: str
+    username: str
+    password: str
+
+
 class Scraper(ABC):
     @abstractmethod
     async def search(

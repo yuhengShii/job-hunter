@@ -67,3 +67,29 @@ def test_delete_running_task_400(client):
         s.commit()
     resp = client.delete(f"/api/tasks/{tid}")
     assert resp.status_code == 400
+
+
+def test_create_task_with_login_credential(client):
+    cid = client.post("/api/site-credentials", json={
+        "site": "51job", "username": "13800000000", "password": "pw123",
+    }).json()["id"]
+    resp = client.post("/api/tasks", json={"keyword_id": 1, "login_credential_id": cid})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["login_credential_id"] == cid
+    assert data["login_username"] == "13800000000"
+
+
+def test_create_task_invalid_credential_400(client):
+    resp = client.post("/api/tasks", json={"keyword_id": 1, "login_credential_id": 999})
+    assert resp.status_code == 400
+
+
+def test_list_task_has_login_username(client):
+    cid = client.post("/api/site-credentials", json={
+        "site": "51job", "username": "13800000000", "password": "pw123",
+    }).json()["id"]
+    client.post("/api/tasks", json={"keyword_id": 1, "login_credential_id": cid})
+    task = client.get("/api/tasks").json()[0]
+    assert task["login_credential_id"] == cid
+    assert task["login_username"] == "13800000000"

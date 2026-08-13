@@ -8,13 +8,18 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import REPO_ROOT, Config
 from backend.app.core.database import SessionLocal
-from backend.app.models import Keyword, ScrapeTask, TaskStatus
+from backend.app.core.exceptions import AppError
+from backend.app.core.site_security import decrypt_password
+from backend.app.models import Keyword, ScrapeTask, Setting, SiteCredential, TaskStatus
+from backend.app.scrapers.base import LoginCredential
 from backend.app.scrapers.playwright import PlaywrightScraper
 from backend.app.services.storage import upsert_companies, upsert_jobs
 
 logger = logging.getLogger("job_hunter")
 
 _POLL_SECONDS = 5
+_SCRAPER_LOGIN_KEY = "scraper_login"
+_DEFAULT_SCRAPER_LOGIN = {"enabled": False, "credential_id": None}
 
 
 def recover_interrupted_tasks() -> None:
@@ -49,6 +54,28 @@ def _claim_next_task(db: Session) -> ScrapeTask | None:
     return task
 
 
+def _resolve_login_credential(db: Session, task: ScrapeTask) -> LoginCredential | None:
+    """任务级 login_credential_id 优先，其次全局 scraper_login 默认，均无则匿名。"""
+    cred_id = task.login_credential_id
+    if cred_id is None:
+        row = db.query(Setting).filter_by(key=_SCRAPER_LOGIN_KEY).first()
+        value = row.value if row else _DEFAULT_SCRAPER_LOGIN
+        if not value.get("enabled") or not value.get("credential_id"):
+            return None
+        cred_id = value["credential_id"]
+    cred = db.get(SiteCredential, cred_id)
+    if cred is None:
+        logger.warning("任务引用的凭据不存在，降级为匿名抓取: task_id=%s cred_id=%s", task.id, cred_id)
+        return None
+    cfg = Config(repo_root=REPO_ROOT)
+    try:
+        password = decrypt_password(cred.password_enc, cfg.site_secret_key)
+    except AppError:
+        logger.error("任务凭据解密失败，降级为匿名抓取: task_id=%s", task.id)
+        return None
+    return LoginCredential(site=cred.site, username=cred.username, password=password)
+
+
 async def execute_task(task_id: int) -> None:
     with SessionLocal() as db:
         task = db.get(ScrapeTask, task_id)
@@ -57,10 +84,11 @@ async def execute_task(task_id: int) -> None:
         kw_area = keyword.city if keyword else "000000"
         kw_industry = keyword.industry if keyword else None
         task_max_pages = task.max_pages
+        login_credential = _resolve_login_credential(db, task)
     cfg = Config(repo_root=REPO_ROOT)
     # per-task max_pages 优先（创建时已校验 ≤ 全局上限），默认取全局上限
     max_pages = min(task_max_pages, cfg.max_pages) if task_max_pages else cfg.max_pages
-    scraper = PlaywrightScraper(headful=cfg.headful)
+    scraper = PlaywrightScraper(headful=cfg.headful, login_credential=login_credential)
     try:
         first_page = True
         async for result in scraper.search(kw_text, max_pages, area=kw_area, industry=kw_industry):

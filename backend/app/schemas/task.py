@@ -7,6 +7,7 @@ class TaskCreate(BaseModel):
     keyword_id: int
     mode: str = "playwright"
     max_pages: int | None = None
+    login_credential_id: int | None = None
 
 
 class TaskOut(BaseModel):
@@ -24,5 +25,7 @@ class TaskOut(BaseModel):
     end_time: datetime | None
     error_message: str | None
     created_at: datetime
+    login_credential_id: int | None
+    login_username: str | None = None
 
     model_config = {"from_attributes": True}

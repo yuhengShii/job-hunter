@@ -2,14 +2,15 @@ import asyncio
 
 from backend.app.core.config import REPO_ROOT
 from backend.app.core.database import SessionLocal, init_db
-from backend.app.models import Company, Job, Keyword, ScrapeTask, TaskStatus
+from backend.app.models import Company, Job, Keyword, ScrapeTask, Setting, SiteCredential, TaskStatus
 from backend.app.scrapers.base import CompanyDraft, JobDraft, PageResult
 from backend.app.services import task_runner
 
 
 class FakeScraper:
-    def __init__(self, headful: bool = False):
+    def __init__(self, headful: bool = False, login_credential=None):
         self.headful = headful
+        self.login_credential_arg = login_credential
         self.pages_arg: int | None = None
         self.area_arg: str | None = None
         self.keyword_arg: str | None = None
@@ -43,7 +44,11 @@ def _seed_task(db_path, max_pages: int | None = None) -> tuple[int, int]:
 
 
 def _patch(monkeypatch, fake: FakeScraper, config):
-    monkeypatch.setattr(task_runner, "PlaywrightScraper", lambda headful=False: fake)
+    def _factory(headful=False, login_credential=None):
+        fake.login_credential_arg = login_credential
+        return fake
+
+    monkeypatch.setattr(task_runner, "PlaywrightScraper", _factory)
     monkeypatch.setattr(task_runner, "Config", lambda repo_root=REPO_ROOT: config)
 
 
@@ -148,3 +153,66 @@ def test_execute_task_industry_none_when_unset(config, monkeypatch):
     task_id, _ = _seed_task(config.db_path)
     asyncio.run(task_runner.execute_task(task_id))
     assert fake.industry_arg is None
+
+
+def _seed_credential(config, username="13800000000") -> int:
+    from backend.app.core.site_security import encrypt_password
+
+    with SessionLocal() as s:
+        c = SiteCredential(
+            site="51job",
+            username=username,
+            password_enc=encrypt_password("pw123", config.site_secret_key),
+        )
+        s.add(c)
+        s.commit()
+        return c.id
+
+
+def _seed_setting_scraper_login(credential_id: int) -> None:
+    with SessionLocal() as s:
+        s.add(Setting(key="scraper_login", value={"enabled": True, "credential_id": credential_id}))
+        s.commit()
+
+
+def test_execute_task_uses_task_login_credential(config, monkeypatch):
+    init_db(config)
+    fake = FakeScraper()
+    fake.search_results = [PageResult(page_num=1, jobs=[JobDraft(job_id="j1", title="t1")])]
+    _patch(monkeypatch, fake, config)
+    cid = _seed_credential(config)
+    with SessionLocal() as s:
+        kw = Keyword(keyword="python")
+        s.add(kw)
+        s.commit()
+        task = ScrapeTask(keyword_id=kw.id, status=TaskStatus.QUEUED.value, login_credential_id=cid)
+        s.add(task)
+        s.commit()
+        task_id = task.id
+    asyncio.run(task_runner.execute_task(task_id))
+    assert fake.login_credential_arg is not None
+    assert fake.login_credential_arg.username == "13800000000"
+    assert fake.login_credential_arg.password == "pw123"
+
+
+def test_execute_task_uses_global_default_when_task_unset(config, monkeypatch):
+    init_db(config)
+    fake = FakeScraper()
+    fake.search_results = [PageResult(page_num=1, jobs=[JobDraft(job_id="j1", title="t1")])]
+    _patch(monkeypatch, fake, config)
+    cid = _seed_credential(config)
+    _seed_setting_scraper_login(cid)
+    task_id, _ = _seed_task(config.db_path)
+    asyncio.run(task_runner.execute_task(task_id))
+    assert fake.login_credential_arg is not None
+    assert fake.login_credential_arg.username == "13800000000"
+
+
+def test_execute_task_no_login_by_default(config, monkeypatch):
+    init_db(config)
+    fake = FakeScraper()
+    fake.search_results = [PageResult(page_num=1, jobs=[JobDraft(job_id="j1", title="t1")])]
+    _patch(monkeypatch, fake, config)
+    task_id, _ = _seed_task(config.db_path)
+    asyncio.run(task_runner.execute_task(task_id))
+    assert fake.login_credential_arg is None

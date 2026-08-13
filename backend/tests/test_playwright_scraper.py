@@ -473,3 +473,55 @@ def test_search_aborts_after_three_consecutive_captcha_pages(monkeypatch):
     assert len(fetched) == 6                           # 无第 4 页抓取（seq 恰好耗尽）
     assert len(launches) == 1                          # 未触发 headful 降级
 
+
+def test_search_calls_login_before_fetch(monkeypatch):
+    from backend.app.scrapers.base import LoginCredential
+
+    launches = []
+    _setup(monkeypatch, launches)
+    login_calls = []
+
+    async def _fake_login(page, site, username, password):
+        login_calls.append((site, username, password))
+        return True
+
+    monkeypatch.setattr(playwright_mod, "login", _fake_login)
+    s = PlaywrightScraper(headful=False, login_credential=LoginCredential("51job", "13800000000", "pw123"))
+    monkeypatch.setattr(
+        s,
+        "_fetch_page",
+        _seq_fetch(iter([PageResult(page_num=1, jobs=[]), PageResult(page_num=2, jobs=[])])),
+    )
+
+    async def run():
+        return [r async for r in s.search("python", 2)]
+
+    out = asyncio.run(run())
+    assert login_calls == [("51job", "13800000000", "pw123")]
+    assert len(out) == 2
+
+
+def test_search_login_failure_falls_back_anonymous(monkeypatch):
+    from backend.app.scrapers.base import LoginCredential
+
+    launches = []
+    _setup(monkeypatch, launches)
+
+    async def _fake_login(page, site, username, password):
+        return False
+
+    monkeypatch.setattr(playwright_mod, "login", _fake_login)
+    s = PlaywrightScraper(headful=False, login_credential=LoginCredential("51job", "u", "w"))
+    monkeypatch.setattr(
+        s,
+        "_fetch_page",
+        _seq_fetch(iter([PageResult(page_num=1, jobs=[]), PageResult(page_num=2, jobs=[])])),
+    )
+
+    async def run():
+        return [r async for r in s.search("python", 2)]
+
+    out = asyncio.run(run())
+    assert len(out) == 2  # 登录失败不中断抓取
+    assert not out[0].failed
+

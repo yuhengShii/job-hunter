@@ -8,7 +8,7 @@ from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
 from backend.app.scrapers.auth import login
-from backend.app.scrapers.base import PageResult, Scraper
+from backend.app.scrapers.base import LoginCredential, PageResult, Scraper
 from backend.app.scrapers.captcha import solve_aliyun_captcha
 from backend.app.scrapers.parser import parse_search_page
 
@@ -39,8 +39,9 @@ window.chrome = window.chrome || {runtime: {}};
 
 
 class PlaywrightScraper(Scraper):
-    def __init__(self, headful: bool = False):
+    def __init__(self, headful: bool = False, login_credential: LoginCredential | None = None):
         self._headful = headful
+        self._login_credential = login_credential
         self._playwright = None
         self._browser = None
         self._context = None
@@ -89,6 +90,22 @@ class PlaywrightScraper(Scraper):
     ) -> AsyncGenerator[PageResult, None]:
         await self._ensure_browser()
         page = await self._new_page()
+        if self._login_credential is not None:
+            try:
+                logged_in = await login(
+                    page,
+                    self._login_credential.site,
+                    self._login_credential.username,
+                    self._login_credential.password,
+                )
+            except Exception as exc:
+                logged_in = False
+                logger.warning("登录异常，降级为匿名抓取: %s", exc)
+            if not logged_in:
+                logger.warning(
+                    "登录失败，降级为匿名抓取: site=%s username=%s",
+                    self._login_credential.site, self._login_credential.username,
+                )
         consecutive_failures = 0
         consecutive_captcha = 0
         last_ids: set[str] | None = None
