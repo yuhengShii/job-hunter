@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-row :gutter="16">
-      <el-col :span="16">
+      <el-col :span="16" :xs="24">
         <el-card class="section-card">
           <template #header>
             <div class="card-header">
@@ -9,7 +9,7 @@
               <el-button type="primary" size="small" @click="openCreate">新建关键字</el-button>
             </div>
           </template>
-          <el-table :data="keywordsStore.list" v-loading="keywordsStore.loading">
+          <el-table :data="keywordsStore.list" v-if="!isMobile" v-loading="keywordsStore.loading">
             <el-table-column prop="keyword" label="关键字" min-width="140" />
             <el-table-column label="地区" width="90">
               <template #default="{ row }">{{ cityName(row.city) }}</template>
@@ -33,18 +33,28 @@
               </template>
             </el-table-column>
           </el-table>
+          <div v-else class="card-list" v-loading="keywordsStore.loading">
+            <KeywordCard
+              v-for="kw in keywordsStore.list"
+              :key="kw.id"
+              :kw="kw"
+              @toggle="toggle(kw)"
+              @edit="openEdit(kw)"
+              @remove="removeKeyword(kw)"
+            />
+          </div>
         </el-card>
 
         <el-card class="section-card">
           <template #header>新建抓取任务</template>
-          <el-form inline>
+          <el-form :inline="!isMobile" :label-position="isMobile ? 'top' : undefined">
             <el-form-item label="关键字">
-              <el-select v-model="taskForm.keyword_id" placeholder="选择关键字" style="width: 200px">
+              <el-select v-model="taskForm.keyword_id" placeholder="选择关键字" :style="inputStyle('200px')">
                 <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="`${kw.keyword} · ${cityName(kw.city)}`" :value="kw.id" />
               </el-select>
             </el-form-item>
             <el-form-item label="方式">
-              <el-select v-model="taskForm.mode" style="width: 140px">
+              <el-select v-model="taskForm.mode" :style="inputStyle('140px')">
                 <el-option label="Playwright" value="playwright" />
               </el-select>
             </el-form-item>
@@ -60,7 +70,7 @@
 
         <el-card class="section-card">
           <template #header>任务列表</template>
-          <el-table :data="tasks" v-loading="tasksLoading">
+          <el-table :data="tasks" v-if="!isMobile" v-loading="tasksLoading">
             <el-table-column label="关键字" width="120">
               <template #default="{ row }">{{ keywordName(row.keyword_id) }}</template>
             </el-table-column>
@@ -90,13 +100,22 @@
               </template>
             </el-table-column>
           </el-table>
+          <div v-else class="card-list" v-loading="tasksLoading">
+            <TaskCard
+              v-for="t in tasks"
+              :key="t.id"
+              :task="t"
+              :keyword-name="keywordName(t.keyword_id)"
+              @remove="removeTask(t)"
+            />
+          </div>
         </el-card>
       </el-col>
 
-      <el-col :span="8">
+      <el-col :span="8" :xs="24">
         <el-card>
           <template #header>定时任务设置</template>
-          <el-form label-width="110px">
+          <el-form label-width="110px" :label-position="isMobile ? 'top' : undefined">
             <el-form-item label="启用定时">
               <el-switch v-model="schedule.enabled" @change="saveSchedule" />
             </el-form-item>
@@ -119,6 +138,33 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-button v-if="isMobile" class="task-fab" type="primary" round @click="taskDialogVisible = true">
+      <el-icon><Plus /></el-icon>
+    </el-button>
+
+    <el-dialog v-if="isMobile" v-model="taskDialogVisible" title="新建抓取任务" width="420px">
+      <el-form label-width="80px">
+        <el-form-item label="关键字">
+          <el-select v-model="taskForm.keyword_id" placeholder="选择关键字" style="width: 100%">
+            <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="`${kw.keyword} · ${cityName(kw.city)}`" :value="kw.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="方式">
+          <el-select v-model="taskForm.mode" style="width: 100%">
+            <el-option label="Playwright" value="playwright" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="最大页数">
+          <el-input-number v-model="taskForm.max_pages" :min="1" :max="scraperConfig.max_pages" />
+          <div class="form-hint">留空 = 全局上限 {{ scraperConfig.max_pages }} 页</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="taskDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creating" @click="createTask">创建</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="keywordDialog.visible" :title="keywordDialog.editing ? '编辑关键字' : '新建关键字'" width="420px">
       <el-form label-width="80px">
@@ -164,13 +210,22 @@ import { useKeywordsStore } from '@/stores/keywords'
 import { CITY_OPTIONS, cityName } from '@/utils/cities'
 import { INDUSTRY_TREE, industryNames } from '@/utils/industries'
 import { formatTime, taskStatusText, taskStatusType } from '@/utils/format'
+import KeywordCard from '@/components/KeywordCard.vue'
+import TaskCard from '@/components/TaskCard.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const keywordsStore = useKeywordsStore()
+const isMobile = useIsMobile()
+const taskDialogVisible = ref(false)
 const tasks = ref<TaskOut[]>([])
 const tasksLoading = ref(false)
 const creating = ref(false)
 const schedule = ref<ScheduleOut>({ enabled: false, interval_minutes: 60, keyword_ids: [] })
 const scraperConfig = ref({ max_pages: 50 })
+
+function inputStyle(desktopPx: string) {
+  return isMobile.value ? { width: '100%' } : { width: desktopPx }
+}
 
 const taskForm = reactive<{ keyword_id: number | null; mode: string; max_pages: number | null }>({
   keyword_id: null,
@@ -238,6 +293,7 @@ async function createTask() {
       max_pages: taskForm.max_pages,
     })
     ElMessage.success('任务已创建')
+    taskDialogVisible.value = false
     await loadTasks()
   } catch {
     // 拦截器已提示（含 409 冲突说明）
@@ -359,4 +415,11 @@ onUnmounted(() => {
 .section-card { margin-bottom: 16px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .form-hint { margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
+.card-list { min-height: 60px; }
+.task-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 24px;
+  z-index: 10;
+}
 </style>
