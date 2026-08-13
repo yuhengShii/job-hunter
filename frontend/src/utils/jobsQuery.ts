@@ -20,3 +20,9 @@ export function jobsStateFromRoute(query: Record<string, unknown>): JobsRouteSta
     publishRange: DATE_RE.test(from) && DATE_RE.test(to) ? [from, to] : null,
   }
 }
+
+export function favoriteParam(value: '' | 'yes' | 'no'): boolean | undefined {
+  if (value === 'yes') return true
+  if (value === 'no') return false
+  return undefined
+}

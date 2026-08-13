@@ -19,6 +19,7 @@ export interface JobOut {
   company_name?: string | null
   company_activity?: string | null
   company_activity_score?: number
+  is_favorite: boolean
   job_url: string | null
   created_at: string
   updated_at: string
@@ -40,6 +41,7 @@ export interface JobQuery {
   salary_max?: number
   publish_time_from?: string
   publish_time_to?: string
+  favorite?: boolean
   sort?: string[]
   page?: number
   page_size?: number
@@ -55,4 +57,8 @@ export const jobsApi = {
   get: (jobId: string) => http.get<JobOut>(`/jobs/${jobId}`).then((r) => r.data),
   filterOptions: (city?: string) =>
     http.get<JobFilterOptions>('/jobs/filter-options', { params: city ? { city } : undefined }).then((r) => r.data),
+  addFavorites: (jobIds: string[]) =>
+    http.post<{ added: number; skipped: number }>('/jobs/favorites', { job_ids: jobIds }).then((r) => r.data),
+  removeFavorites: (jobIds: string[]) =>
+    http.delete<{ removed: number; skipped: number }>('/jobs/favorites', { data: { job_ids: jobIds } }).then((r) => r.data),
 }

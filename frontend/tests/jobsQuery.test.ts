@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { jobsStateFromRoute } from '@/utils/jobsQuery'
+import { favoriteParam, jobsStateFromRoute } from '@/utils/jobsQuery'
 
 describe('jobsStateFromRoute', () => {
   it('完整参数映射', () => {
@@ -36,5 +36,13 @@ describe('jobsStateFromRoute', () => {
       keyword: '',
       publishRange: null,
     })
+  })
+})
+
+describe('favoriteParam', () => {
+  it('maps select value to api param', () => {
+    expect(favoriteParam('yes')).toBe(true)
+    expect(favoriteParam('no')).toBe(false)
+    expect(favoriteParam('')).toBeUndefined()
   })
 })
