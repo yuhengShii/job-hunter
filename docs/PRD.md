@@ -54,6 +54,15 @@
 
 所有统计（overview/salary/company/trend/tags）均基于**最近一次成功或部分成功的任务**覆盖的职位：`jobs.updated_at >= 该任务 start_time`。已下架职位自然被排除；部分成功任务可能混入少量旧职位，属可接受误差，任务状态会在界面标识。
 
+### 4.1 站点凭据与登录抓取
+
+- **site_credentials**（站点登录凭据，为「一键投简历」与「登录后抓取」提供账号来源）：id, site(站点标识，v1 仅 51job), username, password_enc(AES-GCM 加密), remark, created_at, updated_at —— (site, username) 联合唯一。
+- **密码安全**：密码用 AES-GCM 加密存储（密钥在 data/config.ini 的 [site] secret，32 字节随机），任何 API 响应不回传密码，仅返回 has_password。
+- **scrape_tasks** 增加 login_credential_id（NULL=匿名/全局默认）。
+- **登录后抓取开关**：默认不登录。`POST /api/tasks` 可选 login_credential_id（任务级优先）；全局默认存 settings 表 scraper_login（enabled + credential_id），未指定任务且全局开启时自动采用。登录失败自动降级为匿名抓取并记日志。
+- **测试登录**：`POST /api/site-credentials/{id}/test-login` 实际登录验证凭据可用性。
+- **删除限制**：凭据被进行中/排队中任务引用时删除返回 409；已完成/失败任务引用置 NULL。
+
 ## 5. API 设计
 
 除 `POST /api/auth/login` 外，所有接口均需携带 JWT（`Authorization: Bearer`）。
@@ -67,6 +76,7 @@
 - 数据：`GET /api/jobs`（筛选/分页/排序）、`GET /api/jobs/{id}`、`GET /api/companies`
 - 统计：`GET /api/stats/overview`、`/api/stats/salary`、`/api/stats/company`、`/api/stats/trend`、`/api/stats/tags`
 - 配置：`GET/PUT /api/settings/schedule`（持久化到 settings 表）
+- 凭据：`GET/POST /api/site-credentials`、`PUT/DELETE /api/site-credentials/{id}`、`POST /api/site-credentials/{id}/test-login`
 
 ## 6. 抓取模块（v1 Playwright）
 
@@ -93,6 +103,7 @@
 3. **职位列表页**：表格展示职位/薪资/城市/公司/标签/发布时间，顶部按关键字/城市/薪资区间/公司/标签筛选排序，点击查看详情。
 4. **公司列表页**：表格 + 按类型/行业/规模筛选。
 5. **统计看板**：薪资分布（按城市/关键词柱状图）、公司画像（行业/类型/规模占比饼图）、时间趋势（折线图）、标签词频 Top N（条形图/词云）。
+6. **站点账号页**：招聘网站登录凭据管理（增删改查、测试登录），为「登录后抓取」与后续「一键投简历」提供账号。
 
 ## 8. 非功能需求
 
