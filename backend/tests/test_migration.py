@@ -31,3 +31,26 @@ def test_migrate_keywords_industry_idempotent(tmp_path):
         ))
     database._migrate_keywords_industry(eng)
     database._migrate_keywords_industry(eng)  # 第二次执行不报错
+
+
+def test_migrate_tasks_login_credential_id_adds_column(tmp_path):
+    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with eng.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE scrape_tasks (id INTEGER NOT NULL PRIMARY KEY, "
+            "keyword_id INTEGER NOT NULL, status VARCHAR(32) DEFAULT 'queued')"
+        ))
+    database._migrate_tasks_login_credential_id(eng)
+    cols = {c["name"] for c in inspect(eng).get_columns("scrape_tasks")}
+    assert "login_credential_id" in cols
+
+
+def test_migrate_tasks_login_credential_id_idempotent(tmp_path):
+    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with eng.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE scrape_tasks (id INTEGER NOT NULL PRIMARY KEY, "
+            "keyword_id INTEGER NOT NULL, status VARCHAR(32) DEFAULT 'queued')"
+        ))
+    database._migrate_tasks_login_credential_id(eng)
+    database._migrate_tasks_login_credential_id(eng)  # 第二次执行不报错

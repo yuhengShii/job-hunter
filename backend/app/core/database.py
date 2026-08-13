@@ -179,6 +179,19 @@ def _migrate_keywords_industry(engine) -> None:
     logger.info("迁移完成：keywords 增加 industry 列")
 
 
+def _migrate_tasks_login_credential_id(engine) -> None:
+    """轻量迁移：scrape_tasks 表增加 login_credential_id 列（登录抓取所用凭据，NULL=匿名/全局默认）。"""
+    insp = inspect(engine)
+    if "scrape_tasks" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("scrape_tasks")}
+    if "login_credential_id" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE scrape_tasks ADD COLUMN login_credential_id INTEGER"))
+    logger.info("迁移完成：scrape_tasks 增加 login_credential_id 列")
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -192,4 +205,5 @@ def init_db(config: Config) -> None:
     _migrate_jobs_degree_year(engine)
     _migrate_jobs_job_url(engine)
     _migrate_tasks_max_pages(engine)
+    _migrate_tasks_login_credential_id(engine)
     _migrate_companies_drop_website(engine)

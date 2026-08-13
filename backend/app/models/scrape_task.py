@@ -26,6 +26,7 @@ class ScrapeTask(Base):
     keyword_id: Mapped[int] = mapped_column(ForeignKey("keywords.id"), nullable=False)
     mode: Mapped[str] = mapped_column(String(32), default="playwright")
     max_pages: Mapped[int | None] = mapped_column(Integer)
+    login_credential_id: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), default=TaskStatus.QUEUED.value)
     total_pages: Mapped[int | None] = mapped_column(Integer)
     total_found: Mapped[int] = mapped_column(Integer, default=0)
