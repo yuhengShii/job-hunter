@@ -1,7 +1,10 @@
 import asyncio
+import json
 import logging
 import random
+import time
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from urllib.parse import quote
 
 from playwright.async_api import TimeoutError as PWTimeoutError
@@ -17,6 +20,10 @@ logger = logging.getLogger("job_hunter")
 _SEARCH_URL = (
     "https://we.51job.com/pc/search?keyword={kw}&searchType=2&sortType=0&pageNum={n}&jobArea={area}"
 )
+
+# 登录状态持久化文件（cookie/localStorage）。登录成功后保存，后续任务/test-login 自动复用，
+# 会话过期或失效时才需要重新人工验证。位于 data/（已 gitignore，不入库）。
+_STORAGE_STATE_PATH = Path(__file__).resolve().parents[3] / "data" / "51job_storage.json"
 
 
 def build_search_url(
@@ -38,10 +45,56 @@ window.chrome = window.chrome || {runtime: {}};
 """
 
 
+async def _probe_logged_in(page) -> bool:
+    """探测当前浏览器上下文是否已登录 51job。
+
+    实测（2026-08）：my.51job.com 即使带有效登录 cookie 也会重定向到登录页，
+    不可用作探测；we.51job.com 搜索页登录态下顶部显示用户名、
+    无「登录/注册」入口，匿名态则相反，以此判断。
+    """
+    try:
+        await page.goto(
+            "https://we.51job.com/pc/search?keyword=test&searchType=2&sortType=0&pageNum=1&jobArea=000000",
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
+        await page.wait_for_timeout(2500)
+        body = await page.evaluate("document.body ? document.body.innerText : ''")
+        return "登录/注册" not in body
+    except Exception as exc:
+        logger.warning("登录态探测失败，按未登录处理: %s", exc)
+        return False
+
+
+def storage_state_valid(path: str | Path | None) -> bool:
+    """登录状态文件存在且至少含一个未过期 cookie 才算有效。"""
+    if not path:
+        return False
+    p = Path(path)
+    if not p.exists():
+        return False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    now = time.time()
+    for cookie in data.get("cookies", []):
+        exp = cookie.get("expires", -1)
+        if exp == -1 or exp > now:  # session cookie(-1) 或未过期
+            return True
+    return False
+
+
 class PlaywrightScraper(Scraper):
-    def __init__(self, headful: bool = False, login_credential: LoginCredential | None = None):
+    def __init__(
+        self,
+        headful: bool = False,
+        login_credential: LoginCredential | None = None,
+        storage_state_path: str | Path | None = None,
+    ):
         self._headful = headful
         self._login_credential = login_credential
+        self._storage_state = str(storage_state_path or _STORAGE_STATE_PATH)
         self._playwright = None
         self._browser = None
         self._context = None
@@ -62,15 +115,28 @@ class PlaywrightScraper(Scraper):
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
                 ]
             )
-            self._context = await self._browser.new_context(
-                user_agent=ua,
-                viewport={"width": 1600, "height": 1000},
-                locale="zh-CN",
-                timezone_id="Asia/Shanghai",
-            )
+            ctx_kwargs: dict = {
+                "user_agent": ua,
+                "viewport": {"width": 1600, "height": 1000},
+                "locale": "zh-CN",
+                "timezone_id": "Asia/Shanghai",
+            }
+            if storage_state_valid(self._storage_state):
+                ctx_kwargs["storage_state"] = self._storage_state
+                logger.info("已加载保存的登录状态: %s", self._storage_state)
+            self._context = await self._browser.new_context(**ctx_kwargs)
             await self._context.add_init_script(_FINGERPRINT_SCRIPT)
         page = await self._context.new_page()
         return page
+
+    async def save_storage_state(self) -> None:
+        """把当前浏览器会话（cookie/localStorage）导出到文件，供下次复用。"""
+        if self._context is None:
+            return
+        path = Path(self._storage_state)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await self._context.storage_state(path=str(path))
+        logger.info("已保存登录状态: %s", path)
 
     async def _degrade_to_headful(self) -> bool:
         if self._headful:
@@ -92,30 +158,37 @@ class PlaywrightScraper(Scraper):
         page = await self._new_page()
         if self._login_credential is not None:
             logged_in, reason = False, ""
-            try:
-                logged_in, reason = await login(
-                    page,
-                    self._login_credential.site,
-                    self._login_credential.username,
-                    self._login_credential.password,
-                )
-            except Exception as exc:
-                logger.warning("登录异常，降级为匿名抓取: %s", exc)
-            if not logged_in and reason == "geetest":
-                # 极验风控拒绝：切换有头模式并暂停等待人工完成验证码
-                logger.warning(
-                    "检测到极验验证码，切换有头模式等待人工验证（最多 %.0f 秒）",
-                    MANUAL_CAPTCHA_TIMEOUT,
-                )
-                if await self._degrade_to_headful():
-                    page = await self._new_page()
+            if storage_state_valid(self._storage_state):
+                # 已保存的登录状态仍有效：直接复用（cookie 已随 context 加载）
+                logger.info("复用已保存的登录状态: %s", self._storage_state)
+                logged_in = True
+            else:
+                try:
                     logged_in, reason = await login(
                         page,
                         self._login_credential.site,
                         self._login_credential.username,
                         self._login_credential.password,
-                        manual_wait=MANUAL_CAPTCHA_TIMEOUT,
                     )
+                except Exception as exc:
+                    logger.warning("登录异常，降级为匿名抓取: %s", exc)
+                if not logged_in and reason == "geetest":
+                    # 极验风控拒绝：切换有头模式并暂停等待人工完成验证码
+                    logger.warning(
+                        "检测到极验验证码，切换有头模式等待人工验证（最多 %.0f 秒）",
+                        MANUAL_CAPTCHA_TIMEOUT,
+                    )
+                    if await self._degrade_to_headful():
+                        page = await self._new_page()
+                        logged_in, reason = await login(
+                            page,
+                            self._login_credential.site,
+                            self._login_credential.username,
+                            self._login_credential.password,
+                            manual_wait=MANUAL_CAPTCHA_TIMEOUT,
+                        )
+                if logged_in:
+                    await self.save_storage_state()
             if not logged_in:
                 logger.warning(
                     "登录失败，降级为匿名抓取: site=%s username=%s reason=%s",
@@ -263,6 +336,12 @@ async def run_test_login(site: str, username: str, password: str, headful: bool 
     try:
         await scraper._ensure_browser()
         page = await scraper._new_page()
+        if storage_state_valid(scraper._storage_state) and await _probe_logged_in(page):
+            # 已保存的登录状态仍有效：直接复用，免人工验证
+            logger.info(
+                "test-login 复用已保存的登录状态: site=%s username=%s", site, username
+            )
+            return True, "登录成功（复用已保存的登录状态）"
         ok, reason = await login(page, site, username, password)
         if not ok and reason == "geetest":
             # 极验风控拒绝 headless：重启为有头模式并等待人工完成验证码
@@ -274,6 +353,8 @@ async def run_test_login(site: str, username: str, password: str, headful: bool 
             ok, reason = await login(
                 page, site, username, password, manual_wait=MANUAL_CAPTCHA_TIMEOUT
             )
+        if ok:
+            await scraper.save_storage_state()
         msg = "登录成功" if ok else f"登录失败：{reason}"
         return ok, msg
     except Exception as exc:

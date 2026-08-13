@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import inspect
 from collections.abc import AsyncGenerator
 from types import SimpleNamespace
@@ -48,6 +48,7 @@ class _FakePage:
 class _FakeContext:
     def __init__(self):
         self.init_scripts = []
+        self.storage_state_path = None
 
     async def add_init_script(self, script):
         pass
@@ -57,6 +58,11 @@ class _FakeContext:
 
     async def close(self):
         pass
+
+    async def storage_state(self, path=None):
+        if path:
+            self.storage_state_path = path
+        return {}
 
 
 class _FakeBrowser:
@@ -486,6 +492,7 @@ def test_search_calls_login_before_fetch(monkeypatch):
         return True
 
     monkeypatch.setattr(playwright_mod, "login", _fake_login)
+    monkeypatch.setattr(playwright_mod, "storage_state_valid", lambda p: False)
     s = PlaywrightScraper(headful=False, login_credential=LoginCredential("51job", "13800000000", "pw123"))
     monkeypatch.setattr(
         s,
@@ -511,6 +518,7 @@ def test_search_login_failure_falls_back_anonymous(monkeypatch):
         return False
 
     monkeypatch.setattr(playwright_mod, "login", _fake_login)
+    monkeypatch.setattr(playwright_mod, "storage_state_valid", lambda p: False)
     s = PlaywrightScraper(headful=False, login_credential=LoginCredential("51job", "u", "w"))
     monkeypatch.setattr(
         s,
@@ -524,4 +532,33 @@ def test_search_login_failure_falls_back_anonymous(monkeypatch):
     out = asyncio.run(run())
     assert len(out) == 2  # 登录失败不中断抓取
     assert not out[0].failed
+
+
+def test_search_reuses_saved_login_state(monkeypatch):
+    """登录状态文件有效时跳过登录，直接复用已加载的会话。"""
+    from backend.app.scrapers.base import LoginCredential
+
+    launches = []
+    _setup(monkeypatch, launches)
+    login_calls = []
+
+    async def _fake_login(page, site, username, password):
+        login_calls.append((site, username, password))
+        return True
+
+    monkeypatch.setattr(playwright_mod, "login", _fake_login)
+    monkeypatch.setattr(playwright_mod, "storage_state_valid", lambda p: True)
+    s = PlaywrightScraper(headful=False, login_credential=LoginCredential("51job", "13800000000", "pw123"))
+    monkeypatch.setattr(
+        s,
+        "_fetch_page",
+        _seq_fetch(iter([PageResult(page_num=1, jobs=[]), PageResult(page_num=2, jobs=[])])),
+    )
+
+    async def run():
+        return [r async for r in s.search("python", 2)]
+
+    out = asyncio.run(run())
+    assert login_calls == []  # 未走登录流程
+    assert len(out) == 2
 

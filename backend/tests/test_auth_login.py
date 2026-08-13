@@ -162,6 +162,7 @@ def test_run_test_login_delegates_to_login(monkeypatch):
     class _FakeScraper:
         def __init__(self, headful=False):
             self.headful = headful
+            self._storage_state = None
 
         async def _ensure_browser(self):
             pass
@@ -172,7 +173,11 @@ def test_run_test_login_delegates_to_login(monkeypatch):
         async def close(self):
             pass
 
+        async def save_storage_state(self):
+            pass
+
     monkeypatch.setattr(pw_mod, "login", _fake_login)
+    monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: False)
     monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper(headful))
     ok, msg = _run(pw_mod.run_test_login("51job", "13800000000", "pw", headful=True))
     assert ok is True
@@ -188,7 +193,7 @@ def test_run_test_login_failure_message(monkeypatch):
 
     class _FakeScraper:
         def __init__(self, headful=False):
-            pass
+            self._storage_state = None
 
         async def _ensure_browser(self):
             pass
@@ -199,7 +204,11 @@ def test_run_test_login_failure_message(monkeypatch):
         async def close(self):
             pass
 
+        async def save_storage_state(self):
+            pass
+
     monkeypatch.setattr(pw_mod, "login", _fake_login)
+    monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: False)
     monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper())
     ok, msg = _run(pw_mod.run_test_login("51job", "u", "w"))
     assert ok is False
@@ -221,6 +230,7 @@ def test_run_test_login_geetest_switches_headful(monkeypatch):
     class _FakeScraper:
         def __init__(self, headful=False):
             self.headful = headful
+            self._storage_state = None
 
         async def _ensure_browser(self):
             pass
@@ -231,9 +241,54 @@ def test_run_test_login_geetest_switches_headful(monkeypatch):
         async def close(self):
             pass
 
+        async def save_storage_state(self):
+            pass
+
     monkeypatch.setattr(pw_mod, "login", _fake_login)
+    monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: False)
     monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper(headful))
     ok, msg = _run(pw_mod.run_test_login("51job", "13800000000", "pw"))
     assert ok is True
     assert "成功" in msg
     assert calls == [("51job", "13800000000", "pw", 0.0), ("51job", "13800000000", "pw", 120.0)]
+
+
+def test_run_test_login_reuses_saved_state(monkeypatch):
+    """已保存登录状态有效时直接复用，不再调用 login。"""
+    from backend.app.scrapers import playwright as pw_mod
+
+    login_calls = []
+
+    async def _fake_login(page, site, username, password, manual_wait=0.0):
+        login_calls.append((site, username, password))
+        return True, ""
+
+    async def _fake_probe(page):
+        return True  # 探测已登录
+
+    class _FakeScraper:
+        def __init__(self, headful=False):
+            self.headful = headful
+            self._storage_state = None
+
+        async def _ensure_browser(self):
+            pass
+
+        async def _new_page(self):
+            return object()
+
+        async def close(self):
+            pass
+
+        async def save_storage_state(self):
+            pass
+
+    monkeypatch.setattr(pw_mod, "login", _fake_login)
+    monkeypatch.setattr(pw_mod, "_probe_logged_in", _fake_probe)
+    monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: True)
+    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper(headful))
+    ok, msg = _run(pw_mod.run_test_login("51job", "13800000000", "pw"))
+    assert ok is True
+    assert login_calls == []  # 未走登录流程
+    assert "复用" in msg
+
