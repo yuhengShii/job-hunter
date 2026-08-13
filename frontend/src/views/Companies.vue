@@ -1,15 +1,15 @@
 <template>
   <div>
     <el-card class="filter-card">
-      <el-form inline>
+      <el-form :inline="!isMobile">
         <el-form-item label="类型">
-          <el-input v-model="query.type" clearable placeholder="如 民营" style="width: 140px" @keyup.enter="search" />
+          <el-input v-model="query.type" clearable placeholder="如 民营" :style="inputStyle('140px')" @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="行业">
-          <el-input v-model="query.industry" clearable placeholder="包含匹配" style="width: 180px" @keyup.enter="search" />
+          <el-input v-model="query.industry" clearable placeholder="包含匹配" :style="inputStyle('180px')" @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="规模">
-          <el-input v-model="query.size" clearable placeholder="如 1000-4999人" style="width: 160px" @keyup.enter="search" />
+          <el-input v-model="query.size" clearable placeholder="如 1000-4999人" :style="inputStyle('160px')" @keyup.enter="search" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
@@ -18,7 +18,7 @@
       </el-form>
     </el-card>
 
-    <el-card>
+    <el-card v-if="!isMobile">
       <el-table :data="page.items" v-loading="loading">
         <el-table-column prop="name" label="公司名称" min-width="220" show-overflow-tooltip />
         <el-table-column label="类型" width="110">
@@ -44,6 +44,20 @@
         @current-change="onPage"
       />
     </el-card>
+    <div v-else>
+      <div v-loading="loading" class="card-list">
+        <CompanyCard v-for="c in page.items" :key="c.company_id" :company="c" />
+      </div>
+      <el-pagination
+        v-if="page.total > 0"
+        class="pager"
+        layout="total, prev, next"
+        :total="page.total"
+        :page-size="query.page_size"
+        :current-page="query.page"
+        @current-change="onPage"
+      />
+    </div>
   </div>
 </template>
 
@@ -51,9 +65,16 @@
 import { onMounted, reactive, ref } from 'vue'
 import { companiesApi, type CompanyPage } from '@/api/companies'
 import { formatTime } from '@/utils/format'
+import CompanyCard from '@/components/CompanyCard.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const loading = ref(false)
 const page = ref<CompanyPage>({ total: 0, items: [] })
+const isMobile = useIsMobile()
+
+function inputStyle(desktopPx: string) {
+  return isMobile.value ? { width: '100%' } : { width: desktopPx }
+}
 
 const query = reactive<{
   page: number
@@ -107,4 +128,5 @@ onMounted(load)
 <style scoped>
 .filter-card { margin-bottom: 16px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.card-list { min-height: 60px; }
 </style>
