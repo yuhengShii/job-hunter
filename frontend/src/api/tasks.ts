@@ -14,10 +14,12 @@ export interface TaskOut {
   end_time: string | null
   error_message: string | null
   created_at: string
+  login_credential_id: number | null
+  login_username: string | null
 }
 
 export const tasksApi = {
-  create: (data: { keyword_id: number; mode?: string; max_pages?: number | null }) =>
+  create: (data: { keyword_id: number; mode?: string; max_pages?: number | null; login_credential_id?: number | null }) =>
     http.post<TaskOut>('/tasks', data).then((r) => r.data),
   list: () => http.get<TaskOut[]>('/tasks').then((r) => r.data),
   remove: (id: number) => http.delete(`/tasks/${id}`),
