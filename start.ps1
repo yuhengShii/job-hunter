@@ -104,11 +104,11 @@ $npm = Get-Executable "npm"
 # 优先直接调用 venv 内的 uvicorn.exe（单进程，避免 uv 包装层导致孤儿进程）
 if (Test-Path $venvUvicorn) {
     $backendExe = $venvUvicorn
-    $backendArgs = @("backend.app.main:app")
+    $backendArgs = @("backend.app.main:app", "--host", "0.0.0.0")
 }
 else {
     $backendExe = $uv
-    $backendArgs = @("run", "uvicorn", "backend.app.main:app")
+    $backendArgs = @("run", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0")
 }
 
 if ($Dev) {
@@ -121,7 +121,7 @@ if ($Dev) {
     $err = Join-Path $logDir "uvicorn.err.log"
     $env:PYTHONUTF8 = "1"
 
-    Write-Step "启动后端 (http://127.0.0.1:8000)，日志：$out / $err"
+    Write-Step "启动后端 (http://0.0.0.0:8000，局域网可访问)，日志：$out / $err"
     $backend = Start-Process -FilePath $backendExe -ArgumentList $backendArgs -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
 
     try {
@@ -162,7 +162,7 @@ else {
     }
 
     $env:PYTHONUTF8 = "1"
-    Write-Step "启动 job-hunter（生产模式）：http://127.0.0.1:8000 （账号见 data/config.ini），Ctrl+C 停止"
+    Write-Step "启动 job-hunter（生产模式）：http://0.0.0.0:8000 （局域网设备用 http://<本机IP>:8000 访问，账号见 data/config.ini），Ctrl+C 停止"
     $backend = Start-Process -FilePath $backendExe -ArgumentList $backendArgs -WorkingDirectory $root -PassThru
     try {
         Wait-Process -Id $backend.Id
