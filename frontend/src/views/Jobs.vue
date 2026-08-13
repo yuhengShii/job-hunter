@@ -12,7 +12,7 @@
       />
     </el-card>
 
-    <el-card>
+    <el-card v-if="!isMobile">
       <div class="toolbar">
         <span class="selected-info">已选 {{ selection.length }} 项</span>
         <el-button type="primary" :disabled="selection.length === 0" @click="batchFavorite(true)">批量收藏</el-button>
@@ -79,18 +79,71 @@
       />
     </el-card>
 
+    <div v-else>
+      <div class="mobile-toolbar">
+        <el-button type="primary" size="small" @click="filterVisible = true">
+          <el-icon><Filter /></el-icon>
+          <span class="btn-text">筛选</span>
+        </el-button>
+        <el-button size="small" :type="allSelected ? 'primary' : 'default'" @click="toggleSelectAll">全选</el-button>
+        <el-button size="small" type="primary" plain :disabled="selection.length === 0" @click="batchFavorite(true)">
+          收藏
+        </el-button>
+        <el-button size="small" plain :disabled="selection.length === 0" @click="batchFavorite(false)">
+          取消收藏
+        </el-button>
+        <span class="selected-info">已选 {{ selection.length }}</span>
+      </div>
+      <div v-loading="loading" class="mobile-list">
+        <JobCard
+          v-for="job in page.items"
+          :key="job.job_id"
+          :job="job"
+          selectable
+          :selected="selection.some((r) => r.job_id === job.job_id)"
+          @click="openDetail(job)"
+          @toggle-favorite="toggleFavorite(job)"
+          @select="(v: boolean) => onCardSelect(job, v)"
+        />
+      </div>
+      <el-pagination
+        v-if="page.total > 0"
+        class="pager"
+        layout="total, prev, next"
+        :total="page.total"
+        :page-size="query.page_size"
+        :current-page="query.page"
+        @current-change="onPage"
+      />
+    </div>
+
+    <el-drawer v-model="filterVisible" direction="btt" size="70%" :with-header="false">
+      <div class="mobile-filter">
+        <JobFilters
+          mode="stack"
+          :state="query"
+          :city-options="cityOptions"
+          :district-options="districtOptions"
+          @search="mobileSearch"
+          @reset="mobileReset"
+          @city-change="onCityChange"
+        />
+      </div>
+    </el-drawer>
+
     <JobDetailDialog v-model="detailVisible" :job="detailJob" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Star, StarFilled } from '@element-plus/icons-vue'
 import { jobsApi, type JobOut, type JobPage, type JobQuery } from '@/api/jobs'
 import { formatSalaryRaw, formatTime } from '@/utils/format'
 import { favoriteParam, jobsStateFromRoute } from '@/utils/jobsQuery'
 import JobDetailDialog from '@/components/JobDetailDialog.vue'
+import JobCard from '@/components/JobCard.vue'
 import JobFilters, { createDefaultJobFilterState, type JobFilterState } from './JobFilters.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 
@@ -105,6 +158,7 @@ const detailJob = ref<JobOut | null>(null)
 const cityOptions = ref<string[]>([])
 const districtOptions = ref<string[]>([])
 const selection = ref<JobOut[]>([])
+const filterVisible = ref(false)
 
 const query = reactive<JobFilterState>(createDefaultJobFilterState())
 
@@ -180,6 +234,36 @@ function onSelectionChange(rows: JobOut[]) {
   selection.value = rows
 }
 
+const allSelected = computed(
+  () =>
+    page.value.items.length > 0 &&
+    page.value.items.every((j) => selection.value.some((r) => r.job_id === j.job_id)),
+)
+
+function toggleSelectAll() {
+  selection.value = allSelected.value ? [] : [...page.value.items]
+}
+
+function onCardSelect(job: JobOut, selected: boolean) {
+  if (selected) {
+    if (!selection.value.some((r) => r.job_id === job.job_id)) {
+      selection.value.push(job)
+    }
+  } else {
+    selection.value = selection.value.filter((r) => r.job_id !== job.job_id)
+  }
+}
+
+function mobileSearch() {
+  filterVisible.value = false
+  search()
+}
+
+function mobileReset() {
+  filterVisible.value = false
+  reset()
+}
+
 async function toggleFavorite(row: JobOut) {
   try {
     if (row.is_favorite) {
@@ -248,4 +332,14 @@ onMounted(() => {
 .score-mid { color: #e6a23c; font-weight: 600; }
 .score-low { color: #909399; }
 .score-unknown { color: #ffffff; }
+.mobile-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mobile-toolbar .btn-text { margin-left: 4px; }
+.mobile-list { min-height: 60px; }
+.mobile-filter { padding: 4px 8px 20px; }
 </style>

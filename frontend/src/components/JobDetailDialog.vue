@@ -5,7 +5,7 @@
     width="640px"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
-    <el-descriptions v-if="job" :column="2" border>
+    <el-descriptions v-if="job" :column="isMobile ? 1 : 2" border>
       <el-descriptions-item label="职位">{{ job.title }}</el-descriptions-item>
       <el-descriptions-item label="薪资">
         {{ formatSalaryParsed(job.salary_min, job.salary_max) }}（{{ formatSalaryRaw(job.salary_raw) }}）
@@ -31,9 +31,11 @@
 import { computed } from 'vue'
 import type { JobOut } from '@/api/jobs'
 import { formatSalaryParsed, formatSalaryRaw, formatTime } from '@/utils/format'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const props = defineProps<{ modelValue: boolean; job: JobOut | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
+const isMobile = useIsMobile()
 
 // 公司名称/活跃度已由详情接口附带（company_name），无需再全量拉取 companies 表
 const companyName = computed(() => props.job?.company_name ?? props.job?.company_id ?? '-')
