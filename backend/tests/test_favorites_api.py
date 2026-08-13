@@ -38,3 +38,44 @@ def client(config):
         token = c.post("/api/auth/login", json={"username": config.auth_username, "password": config.auth_password}).json()["access_token"]
         c.headers.update({"Authorization": f"Bearer {token}"})
         yield c
+
+
+def test_add_favorites(client):
+    resp = client.post("/api/jobs/favorites", json={"job_ids": ["j1", "j2", "j1"]})
+    assert resp.status_code == 200
+    assert resp.json() == {"added": 2, "skipped": 1}
+
+
+def test_add_favorites_skip_missing_job(client):
+    resp = client.post("/api/jobs/favorites", json={"job_ids": ["j1", "no_such_job"]})
+    assert resp.json() == {"added": 1, "skipped": 1}
+
+
+def test_add_favorites_idempotent(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j1"]})
+    resp = client.post("/api/jobs/favorites", json={"job_ids": ["j1", "j2"]})
+    assert resp.json() == {"added": 1, "skipped": 1}
+
+
+def test_add_favorites_empty_400(client):
+    resp = client.post("/api/jobs/favorites", json={"job_ids": []})
+    assert resp.status_code == 400
+
+
+def test_remove_favorites(client):
+    client.post("/api/jobs/favorites", json={"job_ids": ["j1", "j2"]})
+    resp = client.request("DELETE", "/api/jobs/favorites", json={"job_ids": ["j1", "j1"]})
+    assert resp.status_code == 200
+    assert resp.json() == {"removed": 1, "skipped": 1}
+
+
+def test_remove_favorites_idempotent(client):
+    resp = client.request("DELETE", "/api/jobs/favorites", json={"job_ids": ["j1"]})
+    assert resp.json() == {"removed": 0, "skipped": 1}
+
+
+def test_favorites_require_auth(config):
+    app = create_app(config)
+    with TestClient(app) as c:
+        assert c.post("/api/jobs/favorites", json={"job_ids": ["j1"]}).status_code == 401
+        assert c.request("DELETE", "/api/jobs/favorites", json={"job_ids": ["j1"]}).status_code == 401

@@ -43,6 +43,11 @@ class FavoriteBatchIn(BaseModel):
     job_ids: list[str]
 
 
-class FavoriteBatchOut(BaseModel):
+class FavoriteAddOut(BaseModel):
     added: int = 0
+    skipped: int = 0
+
+
+class FavoriteRemoveOut(BaseModel):
+    removed: int = 0
     skipped: int = 0

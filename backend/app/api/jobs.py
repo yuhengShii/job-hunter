@@ -5,8 +5,8 @@ from sqlalchemy import func, or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
-from backend.app.models import Company, Job
-from backend.app.schemas.job import JobFilterOptions, JobOut, JobPage
+from backend.app.models import Company, Favorite, Job
+from backend.app.schemas.job import FavoriteAddOut, FavoriteBatchIn, FavoriteRemoveOut, JobFilterOptions, JobOut, JobPage
 
 jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -132,3 +132,44 @@ def get_job(job_key: str, db=Depends(get_db), user=Depends(get_current_user)):
     if job is None:
         raise AppError("职位不存在", 404)
     return _with_company([job], db)[0]
+
+
+@jobs_router.post("/favorites", response_model=FavoriteAddOut)
+def add_favorites(
+    body: FavoriteBatchIn,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    if not body.job_ids:
+        raise AppError("job_ids 不能为空", 400)
+    ids = list(dict.fromkeys(body.job_ids))
+    existing = {
+        f.job_id for f in db.query(Favorite).filter(Favorite.job_id.in_(ids)).all()
+    }
+    valid = {
+        jid
+        for (jid,) in db.query(Job.job_id).filter(Job.job_id.in_(ids)).all()
+    }
+    to_add = valid - existing
+    db.add_all([Favorite(job_id=jid) for jid in to_add])
+    db.commit()
+    return FavoriteAddOut(added=len(to_add), skipped=len(body.job_ids) - len(to_add))
+
+
+@jobs_router.delete("/favorites", response_model=FavoriteRemoveOut)
+def remove_favorites(
+    body: FavoriteBatchIn,
+    db=Depends(get_db),
+    user=Depends(get_current_user),
+):
+    if not body.job_ids:
+        raise AppError("job_ids 不能为空", 400)
+    ids = list(dict.fromkeys(body.job_ids))
+    existing = {
+        f.job_id for f in db.query(Favorite).filter(Favorite.job_id.in_(ids)).all()
+    }
+    db.query(Favorite).filter(Favorite.job_id.in_(existing)).delete(
+        synchronize_session=False
+    )
+    db.commit()
+    return FavoriteRemoveOut(removed=len(existing), skipped=len(body.job_ids) - len(existing))
