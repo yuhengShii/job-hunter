@@ -86,3 +86,24 @@ def test_delete_nullifies_finished_task_reference(client):
     assert client.delete(f"/api/site-credentials/{cid}").status_code == 200
     with SessionLocal() as s:
         assert s.get(ScrapeTask, tid).login_credential_id is None
+
+
+def test_test_login_ok(client, monkeypatch):
+    from backend.app.api import site_credentials as sc_mod
+
+    cid = client.post("/api/site-credentials", json={
+        "site": "51job", "username": "13800000000", "password": "pw123",
+    }).json()["id"]
+
+    async def _fake_run(site, username, password, headful=False):
+        assert site == "51job" and username == "13800000000" and password == "pw123"
+        return True, "登录成功"
+
+    monkeypatch.setattr(sc_mod, "run_test_login", _fake_run)
+    resp = client.post(f"/api/site-credentials/{cid}/test-login")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "message": "登录成功"}
+
+
+def test_test_login_404(client):
+    assert client.post("/api/site-credentials/999/test-login").status_code == 404

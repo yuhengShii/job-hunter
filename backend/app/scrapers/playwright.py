@@ -7,6 +7,7 @@ from urllib.parse import quote
 from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
+from backend.app.scrapers.auth import login
 from backend.app.scrapers.base import PageResult, Scraper
 from backend.app.scrapers.captcha import solve_aliyun_captcha
 from backend.app.scrapers.parser import parse_search_page
@@ -220,3 +221,19 @@ class PlaywrightScraper(Scraper):
         if self._playwright:
             await self._playwright.stop()
             self._playwright = None
+
+
+async def run_test_login(site: str, username: str, password: str, headful: bool = False) -> tuple[bool, str]:
+    """独立验证凭据可用性（test-login API 使用）。测试通过 monkeypatch 本模块的 login/PlaywrightScraper 完成。"""
+    scraper = PlaywrightScraper(headful=headful)
+    try:
+        await scraper._ensure_browser()
+        page = await scraper._new_page()
+        ok = await login(page, site, username, password)
+        msg = "登录成功" if ok else "登录失败（账号密码错误、验证码未通过或风控拦截）"
+        return ok, msg
+    except Exception as exc:
+        logger.warning("test-login 异常: %s", exc)
+        return False, f"登录异常: {exc}"
+    finally:
+        await scraper.close()

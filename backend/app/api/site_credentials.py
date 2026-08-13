@@ -10,6 +10,7 @@ from backend.app.schemas.site_credential import (
     SiteCredentialOut,
     SiteCredentialUpdate,
 )
+from backend.app.scrapers.playwright import run_test_login
 
 site_credentials_router = APIRouter(prefix="/api/site-credentials", tags=["site-credentials"])
 
@@ -77,3 +78,18 @@ def delete_credential(cred_id: int, db=Depends(get_db), user=Depends(get_current
     db.delete(cred)
     db.commit()
     return {"ok": True}
+
+
+@site_credentials_router.post("/{cred_id}/test-login")
+async def test_login(cred_id: int, db=Depends(get_db), user=Depends(get_current_user)):
+    cred = db.get(SiteCredential, cred_id)
+    if cred is None:
+        raise AppError("凭据不存在", 404)
+    password = decrypt_password(cred.password_enc, _key())
+    ok, message = await run_test_login(
+        site=cred.site,
+        username=cred.username,
+        password=password,
+        headful=deps._current_config.headful,
+    )
+    return {"ok": ok, "message": message}
