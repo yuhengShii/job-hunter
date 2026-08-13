@@ -1,16 +1,21 @@
 <template>
   <el-container class="layout">
-    <el-aside width="200px">
+    <el-aside v-if="!isMobile" width="200px">
       <el-menu :default-active="$route.path" router>
-        <el-menu-item index="/tasks"><el-icon><Odometer /></el-icon><span>任务控制台</span></el-menu-item>
-        <el-menu-item index="/jobs"><el-icon><Files /></el-icon><span>职位列表</span></el-menu-item>
-        <el-menu-item index="/companies"><el-icon><OfficeBuilding /></el-icon><span>公司列表</span></el-menu-item>
-        <el-menu-item index="/stats"><el-icon><DataAnalysis /></el-icon><span>统计看板</span></el-menu-item>
+        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header class="layout-header">
-        <span class="page-title">{{ $route.meta.title }}</span>
+        <div class="header-left">
+          <el-button v-if="isMobile" class="menu-btn" text @click="drawerVisible = true">
+            <el-icon :size="20"><Menu /></el-icon>
+          </el-button>
+          <span class="page-title">{{ $route.meta.title }}</span>
+        </div>
         <el-dropdown @command="onCommand">
           <span class="user-name">{{ auth.username }}<el-icon><ArrowDown /></el-icon></span>
           <template #dropdown>
@@ -22,15 +27,35 @@
       </el-header>
       <el-main><router-view /></el-main>
     </el-container>
+    <el-drawer v-if="isMobile" v-model="drawerVisible" direction="ltr" size="200px" :with-header="false">
+      <el-menu :default-active="$route.path" router @select="drawerVisible = false">
+        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
+        </el-menu-item>
+      </el-menu>
+    </el-drawer>
   </el-container>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Menu, Odometer, Files, OfficeBuilding, DataAnalysis, ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const auth = useAuthStore()
+const isMobile = useIsMobile()
+const drawerVisible = ref(false)
+
+const menuItems = [
+  { path: '/tasks', icon: Odometer, label: '任务控制台' },
+  { path: '/jobs', icon: Files, label: '职位列表' },
+  { path: '/companies', icon: OfficeBuilding, label: '公司列表' },
+  { path: '/stats', icon: DataAnalysis, label: '统计看板' },
+]
 
 function onCommand(cmd: string) {
   if (cmd === 'logout') {
@@ -48,5 +73,6 @@ function onCommand(cmd: string) {
   justify-content: space-between;
   border-bottom: 1px solid var(--el-border-color-light);
 }
+.header-left { display: flex; align-items: center; gap: 4px; }
 .user-name { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 </style>
