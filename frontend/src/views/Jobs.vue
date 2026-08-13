@@ -144,7 +144,8 @@ import { formatSalaryRaw, formatTime } from '@/utils/format'
 import { favoriteParam, jobsStateFromRoute } from '@/utils/jobsQuery'
 import JobDetailDialog from '@/components/JobDetailDialog.vue'
 import JobCard from '@/components/JobCard.vue'
-import JobFilters, { createDefaultJobFilterState, type JobFilterState } from './JobFilters.vue'
+import JobFilters from './JobFilters.vue'
+import { createDefaultJobFilterState, type JobFilterState } from '@/utils/jobFilterState'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const route = useRoute()
