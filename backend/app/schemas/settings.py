@@ -9,3 +9,12 @@ class ScheduleIn(BaseModel):
 
 class ScheduleOut(ScheduleIn):
     pass
+
+
+class ScraperLoginIn(BaseModel):
+    enabled: bool
+    credential_id: int | None = None
+
+
+class ScraperLoginOut(ScraperLoginIn):
+    pass
