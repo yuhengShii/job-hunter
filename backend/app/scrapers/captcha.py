@@ -54,6 +54,27 @@ async def _is_passed(page: Page) -> bool:
     return "aliyunCaptcha-show" not in cls
 
 
+async def wait_aliyun_manual(page: Page, timeout: float = 120.0, poll_interval: float = 1.0) -> bool:
+    """有头模式下等待人工完成阿里云滑块验证（滑块面板消失/通过）。
+
+    轮询 _is_passed 判断；超时或页面关闭返回 False。页面导航导致的瞬态异常
+    记录日志后继续等待。
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if page.is_closed():
+            logger.warning("滑块人工等待中断：页面已关闭")
+            return False
+        try:
+            if await _is_passed(page):
+                return True
+        except Exception as exc:
+            logger.warning("滑块人工等待轮询异常（继续等待）: %s", exc)
+        await asyncio.sleep(poll_interval)
+    logger.warning("滑块人工等待超时（%.0f 秒）", timeout)
+    return False
+
+
 async def detect_geetest(page: Page) -> bool:
     """检测页面是否出现极验 geetest 验证码（面板或容器元素存在）。
 

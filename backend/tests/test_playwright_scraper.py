@@ -562,3 +562,141 @@ def test_search_reuses_saved_login_state(monkeypatch):
     assert login_calls == []  # 未走登录流程
     assert len(out) == 2
 
+
+class _ApplyFakePage:
+    def is_closed(self):
+        return False
+
+    async def close(self):
+        pass
+
+
+def _setup_apply_scraper(monkeypatch, s, apply_seq, degrade_result=False):
+    async def _ensure_browser():
+        pass
+
+    async def _new_page():
+        return _ApplyFakePage()
+
+    async def _ensure_logged_in(page):
+        return page, True
+
+    async def _degrade():
+        if degrade_result:
+            s._headful = True
+        return degrade_result
+
+    async def _fake_apply_to_job(page, target, **kw):
+        return next(apply_seq)
+
+    monkeypatch.setattr(s, "_ensure_browser", _ensure_browser)
+    monkeypatch.setattr(s, "_new_page", _new_page)
+    monkeypatch.setattr(s, "_ensure_logged_in", _ensure_logged_in)
+    monkeypatch.setattr(s, "_degrade_to_headful", _degrade)
+    monkeypatch.setattr(playwright_mod, "apply_to_job", _fake_apply_to_job)
+
+
+def test_apply_to_jobs_captcha_cooldown_then_retry(monkeypatch):
+    from backend.app.scrapers.applier import ApplyResult, ApplyTarget
+
+    sleeps = []
+
+    async def _recording_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", _recording_sleep)
+    s = PlaywrightScraper(headful=False)
+    _setup_apply_scraper(
+        monkeypatch,
+        s,
+        iter([ApplyResult("j1", "captcha", "验证码未通过"), ApplyResult("j1", "success", "投递成功")]),
+    )
+
+    async def run():
+        return [r async for r in s.apply_to_jobs([ApplyTarget("j1", "t")])]
+
+    out = asyncio.run(run())
+    assert [r.status for r in out] == ["success"]
+    assert sleeps == [90]  # 冷却 90s 先于一切，单目标无页间延时
+
+
+def test_apply_to_jobs_captcha_degrades_headful(monkeypatch):
+    from backend.app.scrapers.applier import ApplyResult, ApplyTarget
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
+    s = PlaywrightScraper(headful=False)
+    _setup_apply_scraper(
+        monkeypatch,
+        s,
+        iter([
+            ApplyResult("j1", "captcha", "验证码未通过"),
+            ApplyResult("j1", "captcha", "验证码未通过"),
+            ApplyResult("j1", "success", "投递成功"),
+        ]),
+        degrade_result=True,
+    )
+
+    async def run():
+        return [r async for r in s.apply_to_jobs([ApplyTarget("j1", "t")])]
+
+    out = asyncio.run(run())
+    assert [r.status for r in out] == ["success"]
+    assert s._headful is True  # 已降级有头
+
+
+def test_apply_to_jobs_captcha_gives_up(monkeypatch):
+    from backend.app.scrapers.applier import ApplyResult, ApplyTarget
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
+    s = PlaywrightScraper(headful=False)
+    _setup_apply_scraper(
+        monkeypatch,
+        s,
+        iter([
+            ApplyResult("j1", "captcha", "验证码未通过"),
+            ApplyResult("j1", "captcha", "验证码未通过"),
+        ]),
+        degrade_result=False,  # 已是 headless 且降级失败
+    )
+
+    async def run():
+        return [r async for r in s.apply_to_jobs([ApplyTarget("j1", "t")])]
+
+    out = asyncio.run(run())
+    assert out[0].status == "failed"
+    assert "验证码" in out[0].message
+
+
+def test_ensure_browser_uses_system_chrome(monkeypatch):
+    launches = []
+    monkeypatch.setattr(playwright_mod, "async_playwright", lambda: _FakePW(launches))
+    s = PlaywrightScraper(headful=False, use_system_chrome=True)
+    asyncio.run(s._ensure_browser())
+    assert launches[0]["channel"] == "chrome"
+    assert launches[0]["headless"] is True
+
+
+def test_ensure_browser_falls_back_when_chrome_missing(monkeypatch):
+    launches = []
+
+    class _Chromium:
+        async def launch(self, **kwargs):
+            launches.append(kwargs)
+            if kwargs.get("channel") == "chrome":
+                raise RuntimeError("Executable doesn't exist")
+            return _FakeBrowser()
+
+    class _PW:
+        async def start(self):
+            return SimpleNamespace(chromium=_Chromium())
+
+        async def stop(self):
+            pass
+
+    monkeypatch.setattr(playwright_mod, "async_playwright", lambda: _PW())
+    s = PlaywrightScraper(headful=False, use_system_chrome=True)
+    asyncio.run(s._ensure_browser())
+    assert launches[0]["channel"] == "chrome"
+    assert "channel" not in launches[1]  # 回退内置 Chromium
+    assert s._browser is not None
+

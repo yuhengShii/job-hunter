@@ -17,6 +17,7 @@
         <span class="selected-info">已选 {{ selection.length }} 项</span>
         <el-button type="primary" :disabled="selection.length === 0" @click="batchFavorite(true)">批量收藏</el-button>
         <el-button :disabled="selection.length === 0" @click="batchFavorite(false)">批量取消收藏</el-button>
+        <el-button type="success" @click="applyVisible = true">一键投递</el-button>
       </div>
       <el-table :data="page.items" v-loading="loading" @selection-change="onSelectionChange" @row-click="onRowClick">
         <el-table-column type="selection" width="40" />
@@ -92,6 +93,7 @@
         <el-button size="small" plain :disabled="selection.length === 0" @click="batchFavorite(false)">
           取消收藏
         </el-button>
+        <el-button size="small" type="success" plain @click="applyVisible = true">投递</el-button>
         <span class="selected-info">已选 {{ selection.length }}</span>
       </div>
       <div v-loading="loading" class="mobile-list">
@@ -132,19 +134,30 @@
     </el-drawer>
 
     <JobDetailDialog v-model="detailVisible" :job="detailJob" />
+    <ApplyDialog
+      v-model="applyVisible"
+      :credentials="credentials"
+      :favorite-count="favoriteCount"
+      :selected-count="selection.length"
+      @create="createApplyTask"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Star, StarFilled } from '@element-plus/icons-vue'
+import { applyApi } from '@/api/apply'
 import { jobsApi, type JobOut, type JobPage, type JobQuery } from '@/api/jobs'
+import { siteCredentialsApi, type SiteCredentialOut } from '@/api/siteCredentials'
 import { formatSalaryRaw, formatTime } from '@/utils/format'
 import { favoriteParam, jobsStateFromRoute } from '@/utils/jobsQuery'
 import JobDetailDialog from '@/components/JobDetailDialog.vue'
 import JobCard from '@/components/JobCard.vue'
 import JobFilters from './JobFilters.vue'
+import ApplyDialog from '@/components/ApplyDialog.vue'
 import { createDefaultJobFilterState, type JobFilterState } from '@/utils/jobFilterState'
 import { useIsMobile } from '@/composables/useIsMobile'
 
@@ -160,6 +173,9 @@ const cityOptions = ref<string[]>([])
 const districtOptions = ref<string[]>([])
 const selection = ref<JobOut[]>([])
 const filterVisible = ref(false)
+const applyVisible = ref(false)
+const credentials = ref<SiteCredentialOut[]>([])
+const favoriteCount = ref(0)
 
 const query = reactive<JobFilterState>(createDefaultJobFilterState())
 
@@ -294,6 +310,35 @@ async function batchFavorite(add: boolean) {
   }
 }
 
+async function loadCredentials() {
+  try {
+    credentials.value = (await siteCredentialsApi.list()).filter((c) => c.site === '51job')
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+async function loadFavoriteCount() {
+  try {
+    const page = await jobsApi.list({ favorite: true, page_size: 1 })
+    favoriteCount.value = page.total
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+async function createApplyTask(payload: { credential_id: number; scope: 'favorites' | 'selected' }) {
+  const job_ids = payload.scope === 'selected' ? selection.value.map((r) => r.job_id) : null
+  try {
+    await applyApi.create({ credential_id: payload.credential_id, job_ids })
+    ElMessage.success('投递任务已创建')
+    applyVisible.value = false
+    router.push('/apply')
+  } catch {
+    // 拦截器已提示（409 冲突等）
+  }
+}
+
 async function openDetail(row: JobOut) {
   try {
     detailJob.value = await jobsApi.get(row.job_id)
@@ -319,6 +364,8 @@ onMounted(() => {
   query.publishRange = s.publishRange
   loadFilterOptions()
   load()
+  loadCredentials()
+  loadFavoriteCount()
 })
 </script>
 

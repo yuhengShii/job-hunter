@@ -41,7 +41,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Menu, Odometer, Files, OfficeBuilding, DataAnalysis, Key, ArrowDown } from '@element-plus/icons-vue'
+import { Menu, Odometer, Files, OfficeBuilding, DataAnalysis, Key, Promotion, ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useIsMobile } from '@/composables/useIsMobile'
 
@@ -56,6 +56,7 @@ const menuItems = [
   { path: '/companies', icon: OfficeBuilding, label: '公司列表' },
   { path: '/stats', icon: DataAnalysis, label: '统计看板' },
   { path: '/credentials', icon: Key, label: '站点账号' },
+  { path: '/apply', icon: Promotion, label: '一键投递' },
 ]
 
 function onCommand(cmd: string) {

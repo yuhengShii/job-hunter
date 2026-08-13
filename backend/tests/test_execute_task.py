@@ -44,7 +44,7 @@ def _seed_task(db_path, max_pages: int | None = None) -> tuple[int, int]:
 
 
 def _patch(monkeypatch, fake: FakeScraper, config):
-    def _factory(headful=False, login_credential=None):
+    def _factory(headful=False, login_credential=None, use_system_chrome=False):
         fake.login_credential_arg = login_credential
         return fake
 

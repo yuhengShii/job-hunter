@@ -3,7 +3,7 @@
 ## 1. 项目定位
 
 - **目标**：按关键字抓取招聘网站（51job 优先）的职位与公司数据，存储到本地 SQLite，用于数据积累与市场分析（薪资、行业、公司画像、时间趋势等）。
-- **范围**：v1 仅实现 51job 抓取；架构上预留智联招聘、Boss直聘的扩展位。
+- **范围**：v1 实现 51job 抓取与一键批量投简历（登录后逐条投递）；架构上预留智联招聘、Boss直聘的扩展位。
 - **部署**：本机 Windows 运行，前后端分离。
 
 ## 2. 技术栈
@@ -38,8 +38,9 @@
 - **jobs**（job_id 唯一，覆盖更新）：id, job_id, title, salary_raw, salary_min, salary_max, city, district, area, degree(学历), year(工作年限), tags(JSON), publish_time, source, company_id, job_url, created_at, updated_at
 - **companies**（company_id 唯一）：id, company_id, name, type(民营/国企/外企), industry, size, activity, activity_score(0-10 活跃值，-1=未知，由 activity 文案按固定规则映射，规则见 §6), created_at, updated_at
 - **settings**：id, key(唯一), value(JSON), updated_at —— 存全局配置（如 schedule：频率、启停、目标关键字）
+- **apply_tasks**（一键批量投简历任务）：id, credential_id(可空，凭据删除时置 NULL), credential_username(账号快照，凭据删除后仍可展示), status(排队/进行中/成功/部分成功/失败), total_count, success_count, failed_count, skipped_count, results(JSON，逐条 `[{job_id,title,job_url,status: pending/success/failed/skipped,message}]`), start_time, end_time, error_message, created_at
 
-索引与类型：job_id、company_id、(keyword, city)、settings.key 建唯一索引；keyword_id、created_at 建普通索引；publish_time、start_time、end_time、created_at、updated_at 均存 datetime。
+索引与类型：job_id、company_id、(keyword, city)、settings.key 建唯一索引；keyword_id、created_at、apply_tasks.created_at 建普通索引；publish_time、start_time、end_time、created_at、updated_at 均存 datetime。
 
 说明：
 - city 使用 51job 6 位城市编码（如 010000 北京 / 020000 上海 / 030200 广州 / 040000 深圳 / 080200 杭州 / 170200 郑州），000000 表示全国；前端维护编码表，后端仅存编码。
@@ -61,7 +62,7 @@
 - **scrape_tasks** 增加 login_credential_id（NULL=匿名/全局默认）。
 - **登录后抓取开关**：默认不登录。`POST /api/tasks` 可选 login_credential_id（任务级优先）；全局默认存 settings 表 scraper_login（enabled + credential_id），未指定任务且全局开启时自动采用。登录失败自动降级为匿名抓取并记日志。
 - **测试登录**：`POST /api/site-credentials/{id}/test-login` 实际登录验证凭据可用性。
-- **删除限制**：凭据被进行中/排队中任务引用时删除返回 409；已完成/失败任务引用置 NULL。
+- **删除限制**：凭据被进行中/排队中任务引用时删除返回 409；已完成/失败任务引用置 NULL（投递任务同样：被进行中/排队中投递任务引用时删除返回 409，已完成/失败投递任务置 NULL 并保留 credential_username 快照）。
 
 ## 5. API 设计
 
@@ -77,6 +78,8 @@
 - 统计：`GET /api/stats/overview`、`/api/stats/salary`、`/api/stats/company`、`/api/stats/trend`、`/api/stats/tags`
 - 配置：`GET/PUT /api/settings/schedule`（持久化到 settings 表）
 - 凭据：`GET/POST /api/site-credentials`、`PUT/DELETE /api/site-credentials/{id}`、`POST /api/site-credentials/{id}/test-login`
+- 一键投递：`POST /api/apply`（请求：`credential_id` + 可选 `job_ids`；`job_ids` 缺省 = 投递全部收藏，显式列表 = 投递指定职位）、`GET /api/apply`、`GET /api/apply/{id}`、`DELETE /api/apply/{id}`
+  - 同一时刻只允许一个进行中/排队中的投递任务，冲突返回 409；凭据 site 必须为 51job，否则 400。
 
 ## 6. 抓取模块（v1 Playwright）
 
@@ -96,6 +99,14 @@
   - **进度**：total_pages 在抓取首页解析出总页数后才有值，此前前端进度显示为"已抓 N 页"。
 - FirecrawlScraper（v2 预留）：实现同一 Scraper 接口，抓取页面后复用同一套解析逻辑。
 
+### 6.1 一键投递模块（applier）
+
+- 复用 `PlaywrightScraper` 的浏览器/登录/验证码能力：登录块抽取为 `_ensure_logged_in`（`search` 与投递共用）；新增 `apply_to_jobs(targets)` 逐条投递，条间随机延时 5-10s（比抓取更克制）。
+- **投递从搜索页发起**（实测详情页 jobs.51job.com 有独立阿里云滑块风控，Playwright 浏览器含真实 Chrome/有头手动拖动均被识别拒绝；搜索页 we.51job.com 风控宽松）：`apply_to_job` 按职位标题搜索 → 按 sensorsdata jobId 定位卡片 → 点卡片「投递」按钮 → 处理 SPA 弹窗序列（简历不完整提示 / 多城市选择 / 「选择需要投递的简历」+「立即申请」/ 附件简历「发送」/ 「投递成功」提示），检测成功或「已投递」。
+- 弹窗处理为 best-effort：未知弹窗把其文案写入失败原因，便于站点改版后定位；搜索页遇滑块验证码沿用冷却重试（90s）+ 有头人工拖动兜底（`manual_wait`）。
+- **投递必须登录**：登录失败判任务失败（不降级匿名）；凭据解密失败/缺失同样判失败。
+- 投递任务后台串行执行（`ApplyRunner` 线程），进程重启时 in_progress 置失败；选择器/文案随 51job 站点改版集中在 `applier.py` 维护。
+
 ## 7. 前端页面
 
 1. **登录页**：用户名 + 密码，本地单用户；首次启动若无用户则自动创建默认账号（用户名/密码从环境变量或配置文件读取）。
@@ -103,7 +114,8 @@
 3. **职位列表页**：表格展示职位/薪资/城市/公司/标签/发布时间，顶部按关键字/城市/薪资区间/公司/标签筛选排序，点击查看详情。
 4. **公司列表页**：表格 + 按类型/行业/规模筛选。
 5. **统计看板**：薪资分布（按城市/关键词柱状图）、公司画像（行业/类型/规模占比饼图）、时间趋势（折线图）、标签词频 Top N（条形图/词云）。
-6. **站点账号页**：招聘网站登录凭据管理（增删改查、测试登录），为「登录后抓取」与后续「一键投简历」提供账号。
+6. **站点账号页**：招聘网站登录凭据管理（增删改查、测试登录），为「登录后抓取」与「一键投简历」提供账号。
+7. **一键投递页**：选择 51job 登录账号，一键对全部收藏（或职位列表页选中项）发起后台批量投递；展示投递任务状态（成功/失败/跳过计数）与逐条结果（职位标题 + 状态 + 原因），进行中/排队中 3s 轮询；职位列表页工具栏提供「一键投递」入口。
 
 ## 8. 非功能需求
 

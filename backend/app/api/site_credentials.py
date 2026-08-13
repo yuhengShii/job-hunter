@@ -4,7 +4,7 @@ from backend.app.api import deps
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
 from backend.app.core.site_security import decrypt_password, encrypt_password
-from backend.app.models import ScrapeTask, SiteCredential, TaskStatus
+from backend.app.models import ApplyTask, ScrapeTask, SiteCredential, TaskStatus
 from backend.app.schemas.site_credential import (
     SiteCredentialCreate,
     SiteCredentialOut,
@@ -72,8 +72,16 @@ def delete_credential(cred_id: int, db=Depends(get_db), user=Depends(get_current
         ScrapeTask.status.in_(_RUNNING),
     ).first():
         raise AppError("该凭据被进行中/排队中的任务引用，不能删除", 409)
+    if db.query(ApplyTask).filter(
+        ApplyTask.credential_id == cred_id,
+        ApplyTask.status.in_(_RUNNING),
+    ).first():
+        raise AppError("该凭据被进行中/排队中的投递任务引用，不能删除", 409)
     db.query(ScrapeTask).filter(ScrapeTask.login_credential_id == cred_id).update(
         {ScrapeTask.login_credential_id: None}
+    )
+    db.query(ApplyTask).filter(ApplyTask.credential_id == cred_id).update(
+        {ApplyTask.credential_id: None}
     )
     db.delete(cred)
     db.commit()
@@ -91,5 +99,6 @@ async def test_login(cred_id: int, db=Depends(get_db), user=Depends(get_current_
         username=cred.username,
         password=password,
         headful=deps._current_config.headful,
+        use_system_chrome=deps._current_config.use_system_chrome,
     )
     return {"ok": ok, "message": message}

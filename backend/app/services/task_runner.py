@@ -88,7 +88,11 @@ async def execute_task(task_id: int) -> None:
     cfg = Config(repo_root=REPO_ROOT)
     # per-task max_pages 优先（创建时已校验 ≤ 全局上限），默认取全局上限
     max_pages = min(task_max_pages, cfg.max_pages) if task_max_pages else cfg.max_pages
-    scraper = PlaywrightScraper(headful=cfg.headful, login_credential=login_credential)
+    scraper = PlaywrightScraper(
+        headful=cfg.headful,
+        login_credential=login_credential,
+        use_system_chrome=cfg.use_system_chrome,
+    )
     try:
         first_page = True
         async for result in scraper.search(kw_text, max_pages, area=kw_area, industry=kw_industry):

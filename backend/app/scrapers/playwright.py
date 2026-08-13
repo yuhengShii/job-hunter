@@ -10,6 +10,7 @@ from urllib.parse import quote
 from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
+from backend.app.scrapers.applier import ApplyResult, ApplyTarget, apply_to_job
 from backend.app.scrapers.auth import MANUAL_CAPTCHA_TIMEOUT, login
 from backend.app.scrapers.base import LoginCredential, PageResult, Scraper
 from backend.app.scrapers.captcha import solve_aliyun_captcha
@@ -91,10 +92,12 @@ class PlaywrightScraper(Scraper):
         headful: bool = False,
         login_credential: LoginCredential | None = None,
         storage_state_path: str | Path | None = None,
+        use_system_chrome: bool = False,
     ):
         self._headful = headful
         self._login_credential = login_credential
         self._storage_state = str(storage_state_path or _STORAGE_STATE_PATH)
+        self._use_system_chrome = use_system_chrome
         self._playwright = None
         self._browser = None
         self._context = None
@@ -103,6 +106,15 @@ class PlaywrightScraper(Scraper):
         if self._browser:
             return
         self._playwright = await async_playwright().start()
+        if self._use_system_chrome:
+            try:
+                self._browser = await self._playwright.chromium.launch(
+                    channel="chrome", headless=not self._headful, args=_LAUNCH_ARGS
+                )
+                logger.info("已使用系统 Chrome 启动浏览器")
+                return
+            except Exception as exc:
+                logger.warning("系统 Chrome 启动失败，回退内置 Chromium: %s", exc)
         self._browser = await self._playwright.chromium.launch(
             headless=not self._headful, args=_LAUNCH_ARGS
         )
@@ -151,51 +163,60 @@ class PlaywrightScraper(Scraper):
             return False
         return True
 
-    async def search(
-        self, keyword: str, pages: int, area: str = "000000", industry: str | None = None
-    ) -> AsyncGenerator[PageResult, None]:
-        await self._ensure_browser()
-        page = await self._new_page()
-        if self._login_credential is not None:
-            logged_in, reason = False, ""
-            if storage_state_valid(self._storage_state):
-                # 已保存的登录状态仍有效：直接复用（cookie 已随 context 加载）
-                logger.info("复用已保存的登录状态: %s", self._storage_state)
-                logged_in = True
-            else:
-                try:
+    async def _ensure_logged_in(self, page) -> tuple:
+        """按需登录（含 storage_state 复用与极验降级有头重试）。
+
+        返回 (可能重建的 page, 是否已登录)；匿名（无 login_credential）视为已就绪。
+        """
+        if self._login_credential is None:
+            return page, True
+        logged_in, reason = False, ""
+        if storage_state_valid(self._storage_state):
+            # 已保存的登录状态仍有效：直接复用（cookie 已随 context 加载）
+            logger.info("复用已保存的登录状态: %s", self._storage_state)
+            logged_in = True
+        else:
+            try:
+                logged_in, reason = await login(
+                    page,
+                    self._login_credential.site,
+                    self._login_credential.username,
+                    self._login_credential.password,
+                )
+            except Exception as exc:
+                logger.warning("登录异常，降级为匿名抓取: %s", exc)
+            if not logged_in and reason == "geetest":
+                # 极验风控拒绝：切换有头模式并暂停等待人工完成验证码
+                logger.warning(
+                    "检测到极验验证码，切换有头模式等待人工验证（最多 %.0f 秒）",
+                    MANUAL_CAPTCHA_TIMEOUT,
+                )
+                if await self._degrade_to_headful():
+                    page = await self._new_page()
                     logged_in, reason = await login(
                         page,
                         self._login_credential.site,
                         self._login_credential.username,
                         self._login_credential.password,
+                        manual_wait=MANUAL_CAPTCHA_TIMEOUT,
                     )
-                except Exception as exc:
-                    logger.warning("登录异常，降级为匿名抓取: %s", exc)
-                if not logged_in and reason == "geetest":
-                    # 极验风控拒绝：切换有头模式并暂停等待人工完成验证码
-                    logger.warning(
-                        "检测到极验验证码，切换有头模式等待人工验证（最多 %.0f 秒）",
-                        MANUAL_CAPTCHA_TIMEOUT,
-                    )
-                    if await self._degrade_to_headful():
-                        page = await self._new_page()
-                        logged_in, reason = await login(
-                            page,
-                            self._login_credential.site,
-                            self._login_credential.username,
-                            self._login_credential.password,
-                            manual_wait=MANUAL_CAPTCHA_TIMEOUT,
-                        )
-                if logged_in:
-                    await self.save_storage_state()
-            if not logged_in:
-                logger.warning(
-                    "登录失败，降级为匿名抓取: site=%s username=%s reason=%s",
-                    self._login_credential.site,
-                    self._login_credential.username,
-                    reason,
-                )
+            if logged_in:
+                await self.save_storage_state()
+        if not logged_in:
+            logger.warning(
+                "登录失败，降级为匿名抓取: site=%s username=%s reason=%s",
+                self._login_credential.site,
+                self._login_credential.username,
+                reason,
+            )
+        return page, logged_in
+
+    async def search(
+        self, keyword: str, pages: int, area: str = "000000", industry: str | None = None
+    ) -> AsyncGenerator[PageResult, None]:
+        await self._ensure_browser()
+        page = await self._new_page()
+        page, _ = await self._ensure_logged_in(page)
         consecutive_failures = 0
         consecutive_captcha = 0
         last_ids: set[str] | None = None
@@ -260,6 +281,50 @@ class PlaywrightScraper(Scraper):
                 n += 1
         finally:
             await page.close()
+
+    async def apply_to_jobs(
+        self, targets: list[ApplyTarget]
+    ) -> AsyncGenerator[ApplyResult, None]:
+        """逐条对职位执行投递。投递必须登录，登录失败抛 RuntimeError（由上层判任务失败）。
+
+        单条遇滑块验证码时：冷却 90s 重试一次（风控为滚动窗口，冷却后自动解除），
+        仍拦截则降级有头模式供人工拖动兜底，再失败才记为失败。
+        """
+        await self._ensure_browser()
+        page = await self._new_page()
+        try:
+            page, logged_in = await self._ensure_logged_in(page)
+            if not logged_in:
+                raise RuntimeError("登录失败，无法投递")
+            for i, target in enumerate(targets):
+                try:
+                    result = await apply_to_job(page, target)
+                except Exception as exc:
+                    logger.warning("投递异常: job_id=%s err=%s", target.job_id, exc)
+                    result = ApplyResult(target.job_id, "failed", f"投递异常：{exc}")
+                page, result = await self._retry_captcha(page, target, result)
+                yield result
+                if i < len(targets) - 1:
+                    await asyncio.sleep(random.uniform(5.0, 10.0))
+        finally:
+            await page.close()
+
+    async def _retry_captcha(self, page, target: ApplyTarget, result: ApplyResult) -> tuple:
+        """滑块验证码兜底：冷却重试 + 有头人工拖动。返回 (可能重建的 page, 最终结果)。"""
+        if result.status != "captcha":
+            return page, result
+        logger.warning(
+            "投递遇滑块验证，冷却 %s 秒后重试: job_id=%s", _CAPTCHA_COOLDOWN, target.job_id
+        )
+        await asyncio.sleep(_CAPTCHA_COOLDOWN)
+        result = await apply_to_job(page, target)
+        if result.status == "captcha" and await self._degrade_to_headful():
+            logger.warning("滑块仍拦截，切换有头模式等待人工验证: job_id=%s", target.job_id)
+            page = await self._new_page()
+            result = await apply_to_job(page, target, manual_wait=MANUAL_CAPTCHA_TIMEOUT)
+        if result.status == "captcha":
+            result = ApplyResult(target.job_id, "failed", "验证码未通过")
+        return page, result
 
     async def _click_next_page(self, page, target_page_num: int) -> None:
         """51job 新版 SPA：URL pageNum 参数不生效（实测各页返回同一批职位），
@@ -330,9 +395,11 @@ class PlaywrightScraper(Scraper):
             self._playwright = None
 
 
-async def run_test_login(site: str, username: str, password: str, headful: bool = False) -> tuple[bool, str]:
+async def run_test_login(
+    site: str, username: str, password: str, headful: bool = False, use_system_chrome: bool = False
+) -> tuple[bool, str]:
     """独立验证凭据可用性（test-login API 使用）。测试通过 monkeypatch 本模块的 login/PlaywrightScraper 完成。"""
-    scraper = PlaywrightScraper(headful=headful)
+    scraper = PlaywrightScraper(headful=headful, use_system_chrome=use_system_chrome)
     try:
         await scraper._ensure_browser()
         page = await scraper._new_page()
@@ -347,7 +414,7 @@ async def run_test_login(site: str, username: str, password: str, headful: bool 
             # 极验风控拒绝 headless：重启为有头模式并等待人工完成验证码
             logger.warning("test-login 检测到极验验证码，切换有头模式等待人工验证")
             await scraper.close()
-            scraper = PlaywrightScraper(headful=True)
+            scraper = PlaywrightScraper(headful=True, use_system_chrome=use_system_chrome)
             await scraper._ensure_browser()
             page = await scraper._new_page()
             ok, reason = await login(

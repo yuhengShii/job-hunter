@@ -178,7 +178,7 @@ def test_run_test_login_delegates_to_login(monkeypatch):
 
     monkeypatch.setattr(pw_mod, "login", _fake_login)
     monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: False)
-    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper(headful))
+    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False, use_system_chrome=False: _FakeScraper(headful))
     ok, msg = _run(pw_mod.run_test_login("51job", "13800000000", "pw", headful=True))
     assert ok is True
     assert calls == [("51job", "13800000000", "pw", 0.0)]
@@ -209,7 +209,7 @@ def test_run_test_login_failure_message(monkeypatch):
 
     monkeypatch.setattr(pw_mod, "login", _fake_login)
     monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: False)
-    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper())
+    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False, use_system_chrome=False: _FakeScraper())
     ok, msg = _run(pw_mod.run_test_login("51job", "u", "w"))
     assert ok is False
     assert "失败" in msg
@@ -246,7 +246,7 @@ def test_run_test_login_geetest_switches_headful(monkeypatch):
 
     monkeypatch.setattr(pw_mod, "login", _fake_login)
     monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: False)
-    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper(headful))
+    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False, use_system_chrome=False: _FakeScraper(headful))
     ok, msg = _run(pw_mod.run_test_login("51job", "13800000000", "pw"))
     assert ok is True
     assert "成功" in msg
@@ -286,7 +286,7 @@ def test_run_test_login_reuses_saved_state(monkeypatch):
     monkeypatch.setattr(pw_mod, "login", _fake_login)
     monkeypatch.setattr(pw_mod, "_probe_logged_in", _fake_probe)
     monkeypatch.setattr(pw_mod, "storage_state_valid", lambda p: True)
-    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False: _FakeScraper(headful))
+    monkeypatch.setattr(pw_mod, "PlaywrightScraper", lambda headful=False, use_system_chrome=False: _FakeScraper(headful))
     ok, msg = _run(pw_mod.run_test_login("51job", "13800000000", "pw"))
     assert ok is True
     assert login_calls == []  # 未走登录流程

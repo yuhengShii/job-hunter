@@ -28,7 +28,7 @@ class Config:
                 "password": secrets.token_urlsafe(12),
                 "jwt_secret": secrets.token_urlsafe(32),
             }
-            p["scraper"] = {"max_pages": "50", "headful": "false"}
+            p["scraper"] = {"max_pages": "50", "headful": "false", "use_system_chrome": "false"}
             p["site"] = {"secret": secrets.token_hex(32)}
             with open(self.config_path, "w", encoding="utf-8") as f:
                 p.write(f)
@@ -41,6 +41,11 @@ class Config:
         # 旧配置文件缺少 [site] 段时补写，幂等
         if "site" not in self._parser:
             self._parser["site"] = {"secret": secrets.token_hex(32)}
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                self._parser.write(f)
+        # 旧配置文件 [scraper] 缺少 use_system_chrome 键时补写，幂等
+        if "scraper" in self._parser and "use_system_chrome" not in self._parser["scraper"]:
+            self._parser["scraper"]["use_system_chrome"] = "false"
             with open(self.config_path, "w", encoding="utf-8") as f:
                 self._parser.write(f)
 
@@ -63,6 +68,14 @@ class Config:
     @property
     def headful(self) -> bool:
         return self._parser.getboolean("scraper", "headful")
+
+    @property
+    def use_system_chrome(self) -> bool:
+        """是否用本机已安装的 Chrome（channel=chrome）替代内置 Chromium 启动浏览器。"""
+        try:
+            return self._parser.getboolean("scraper", "use_system_chrome", fallback=False)
+        except Exception:
+            return False
 
     @property
     def site_secret_key(self) -> bytes:
