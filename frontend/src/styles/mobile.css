@@ -1,0 +1,10 @@
+/* 移动端全局适配（<=768px，与 useIsMobile 断点一致） */
+@media (max-width: 768px) {
+  /* el-dialog 的 width 由内联 --el-dialog-width 控制，需 !important 覆盖 */
+  .el-dialog {
+    --el-dialog-width: 92vw !important;
+  }
+  .el-main {
+    padding: 10px;
+  }
+}

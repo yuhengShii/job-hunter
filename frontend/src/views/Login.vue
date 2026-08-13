@@ -57,7 +57,7 @@ async function submit() {
   justify-content: center;
   background: #f5f7fa;
 }
-.login-card { width: 360px; }
+.login-card { width: min(92vw, 360px); }
 .login-title { text-align: center; font-size: 18px; }
 .login-btn { width: 100%; }
 </style>
