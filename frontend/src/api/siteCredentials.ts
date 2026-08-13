@@ -23,6 +23,7 @@ export const siteCredentialsApi = {
   update: (id: number, data: { remark?: string | null; password?: string | null }) =>
     http.put<SiteCredentialOut>(`/site-credentials/${id}`, data).then((r) => r.data),
   remove: (id: number) => http.delete(`/site-credentials/${id}`),
+  // 登录测试可能触发极验验证码人工验证（最多 120s），超时放宽到 3 分钟
   testLogin: (id: number) =>
-    http.post<TestLoginResult>(`/site-credentials/${id}/test-login`).then((r) => r.data),
+    http.post<TestLoginResult>(`/site-credentials/${id}/test-login`, undefined, { timeout: 180000 }).then((r) => r.data),
 }

@@ -7,7 +7,7 @@ from urllib.parse import quote
 from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
-from backend.app.scrapers.auth import login
+from backend.app.scrapers.auth import MANUAL_CAPTCHA_TIMEOUT, login
 from backend.app.scrapers.base import LoginCredential, PageResult, Scraper
 from backend.app.scrapers.captcha import solve_aliyun_captcha
 from backend.app.scrapers.parser import parse_search_page
@@ -91,20 +91,37 @@ class PlaywrightScraper(Scraper):
         await self._ensure_browser()
         page = await self._new_page()
         if self._login_credential is not None:
+            logged_in, reason = False, ""
             try:
-                logged_in = await login(
+                logged_in, reason = await login(
                     page,
                     self._login_credential.site,
                     self._login_credential.username,
                     self._login_credential.password,
                 )
             except Exception as exc:
-                logged_in = False
                 logger.warning("登录异常，降级为匿名抓取: %s", exc)
+            if not logged_in and reason == "geetest":
+                # 极验风控拒绝：切换有头模式并暂停等待人工完成验证码
+                logger.warning(
+                    "检测到极验验证码，切换有头模式等待人工验证（最多 %.0f 秒）",
+                    MANUAL_CAPTCHA_TIMEOUT,
+                )
+                if await self._degrade_to_headful():
+                    page = await self._new_page()
+                    logged_in, reason = await login(
+                        page,
+                        self._login_credential.site,
+                        self._login_credential.username,
+                        self._login_credential.password,
+                        manual_wait=MANUAL_CAPTCHA_TIMEOUT,
+                    )
             if not logged_in:
                 logger.warning(
-                    "登录失败，降级为匿名抓取: site=%s username=%s",
-                    self._login_credential.site, self._login_credential.username,
+                    "登录失败，降级为匿名抓取: site=%s username=%s reason=%s",
+                    self._login_credential.site,
+                    self._login_credential.username,
+                    reason,
                 )
         consecutive_failures = 0
         consecutive_captcha = 0
@@ -246,8 +263,18 @@ async def run_test_login(site: str, username: str, password: str, headful: bool 
     try:
         await scraper._ensure_browser()
         page = await scraper._new_page()
-        ok = await login(page, site, username, password)
-        msg = "登录成功" if ok else "登录失败（账号密码错误、验证码未通过或风控拦截）"
+        ok, reason = await login(page, site, username, password)
+        if not ok and reason == "geetest":
+            # 极验风控拒绝 headless：重启为有头模式并等待人工完成验证码
+            logger.warning("test-login 检测到极验验证码，切换有头模式等待人工验证")
+            await scraper.close()
+            scraper = PlaywrightScraper(headful=True)
+            await scraper._ensure_browser()
+            page = await scraper._new_page()
+            ok, reason = await login(
+                page, site, username, password, manual_wait=MANUAL_CAPTCHA_TIMEOUT
+            )
+        msg = "登录成功" if ok else f"登录失败：{reason}"
         return ok, msg
     except Exception as exc:
         logger.warning("test-login 异常: %s", exc)

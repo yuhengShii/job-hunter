@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import random
+import time
+from pathlib import Path
 
 from playwright.async_api import Page
 
@@ -10,6 +12,10 @@ _SLIDER_SELECTOR = "#aliyunCaptcha-sliding-slider"
 _WRAPPER_SELECTOR = "#aliyunCaptcha-sliding-wrapper"
 _EMBED_SELECTOR = "#aliyunCaptcha-window-embed"
 _ERROR_SELECTOR = "#aliyunCaptcha-sliding-errorCode"
+
+_GEETEST_PANEL = ".geetest_panel"
+_GEETEST_HOLDER = ".geetest_holder"
+_GEETEST_SUCCESS = ".geetest_panel_success, .geetest_success"
 
 _STEPS = 80
 _JITTER = 2.0
@@ -46,6 +52,63 @@ async def _is_passed(page: Page) -> bool:
         return True
     cls = await box.get_attribute("class") or ""
     return "aliyunCaptcha-show" not in cls
+
+
+async def detect_geetest(page: Page) -> bool:
+    """检测页面是否出现极验 geetest 验证码（面板或容器元素存在）。
+
+    51job 登录页实测（2026-08）使用极验 fullpage/wind 主题，
+    风控拒绝时会以「网络超时」伪错误展示，因此按容器存在性判断。
+    """
+    for sel in (_GEETEST_PANEL, _GEETEST_HOLDER):
+        if await page.locator(sel).count() > 0:
+            return True
+    return False
+
+
+async def wait_geetest_manual(page: Page, timeout: float = 120.0, poll_interval: float = 1.0) -> bool:
+    """有头模式下等待人工完成极验验证码。
+
+    轮询「成功面板可见」或「URL 已离开 login.51job.com」判断完成；
+    超时返回 False。页面导航导致的瞬态异常（execution context 销毁等）
+    记录日志后继续等待，仅页面真正关闭才终止。
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if page.is_closed():
+            logger.warning("极验人工等待中断：页面已关闭")
+            await _dump_screenshot(page, "closed")
+            return False
+        try:
+            done = await page.evaluate(
+                """() => {
+                    const el = document.querySelector('.geetest_panel_success, .geetest_success');
+                    if (el && (el.offsetWidth || el.offsetHeight)) return true;
+                    return !location.href.includes('login.51job.com');
+                }"""
+            )
+        except Exception as exc:
+            # 页面导航/刷新期间的瞬态异常：不能当作人工超时
+            logger.warning("极验人工等待轮询异常（继续等待）: %s", exc)
+            await asyncio.sleep(poll_interval)
+            continue
+        if done:
+            return True
+        await asyncio.sleep(poll_interval)
+    logger.warning("极验人工等待超时（%.0f 秒）", timeout)
+    await _dump_screenshot(page, "timeout")
+    return False
+
+
+async def _dump_screenshot(page: Page, tag: str) -> None:
+    """保存当前页面截图到 logs/，用于诊断人工验证窗口的实际状态。"""
+    try:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        path = Path(__file__).resolve().parents[3] / "logs" / f"geetest_manual_{tag}_{ts}.png"
+        await page.screenshot(path=str(path))
+        logger.warning("已保存诊断截图: %s", path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("诊断截图失败: %s", exc)
 
 
 async def solve_aliyun_captcha(page: Page, max_attempts: int = 3) -> bool:
