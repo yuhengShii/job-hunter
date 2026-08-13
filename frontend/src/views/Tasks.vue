@@ -62,6 +62,19 @@
               <el-input-number v-model="taskForm.max_pages" :min="1" :max="scraperConfig.max_pages" placeholder="留空用默认" />
               <span class="form-hint">留空 = 全局上限 {{ scraperConfig.max_pages }} 页</span>
             </el-form-item>
+            <el-form-item label="登录后抓取">
+              <el-switch v-model="taskForm.use_login" />
+            </el-form-item>
+            <el-form-item v-if="taskForm.use_login" label="登录账号">
+              <el-select v-model="taskForm.login_credential_id" placeholder="选择账号" :style="inputStyle('180px')">
+                <el-option
+                  v-for="c in credentials"
+                  :key="c.id"
+                  :label="`${siteLabel(c.site)} · ${c.username}`"
+                  :value="c.id"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item>
               <el-button type="primary" :loading="creating" @click="createTask">创建任务</el-button>
             </el-form-item>
@@ -94,6 +107,12 @@
             <el-table-column label="开始 / 结束" width="200">
               <template #default="{ row }">{{ formatTime(row.start_time) }} / {{ formatTime(row.end_time) }}</template>
             </el-table-column>
+            <el-table-column label="登录抓取" width="150">
+              <template #default="{ row }">
+                <el-tag v-if="row.login_username" type="warning" size="small">{{ row.login_username }}</el-tag>
+                <span v-else class="form-hint">匿名</span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="80">
               <template #default="{ row }">
                 <el-button size="small" @click="removeTask(row)">删除</el-button>
@@ -106,6 +125,7 @@
               :key="t.id"
               :task="t"
               :keyword-name="keywordName(t.keyword_id)"
+              :login-username="t.login_username ?? undefined"
               @remove="removeTask(t)"
             />
           </div>
@@ -136,6 +156,29 @@
             </el-form-item>
           </el-form>
         </el-card>
+        <el-card class="section-card">
+          <template #header>登录抓取默认账号</template>
+          <el-form label-width="110px" :label-position="isMobile ? 'top' : undefined">
+            <el-form-item label="默认登录抓取">
+              <el-switch v-model="scraperLogin.enabled" @change="saveScraperLogin" />
+            </el-form-item>
+            <el-form-item v-if="scraperLogin.enabled" label="默认账号">
+              <el-select
+                v-model="scraperLogin.credential_id"
+                style="width: 100%"
+                placeholder="选择账号（未指定任务时使用）"
+                @change="saveScraperLogin"
+              >
+                <el-option
+                  v-for="c in credentials"
+                  :key="c.id"
+                  :label="`${siteLabel(c.site)} · ${c.username}`"
+                  :value="c.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </el-card>
       </el-col>
     </el-row>
 
@@ -158,6 +201,19 @@
         <el-form-item label="最大页数">
           <el-input-number v-model="taskForm.max_pages" :min="1" :max="scraperConfig.max_pages" />
           <div class="form-hint">留空 = 全局上限 {{ scraperConfig.max_pages }} 页</div>
+        </el-form-item>
+        <el-form-item label="登录后抓取">
+          <el-switch v-model="taskForm.use_login" />
+        </el-form-item>
+        <el-form-item v-if="taskForm.use_login" label="登录账号">
+          <el-select v-model="taskForm.login_credential_id" placeholder="选择账号" style="width: 100%">
+            <el-option
+              v-for="c in credentials"
+              :key="c.id"
+              :label="`${siteLabel(c.site)} · ${c.username}`"
+              :value="c.id"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -204,8 +260,9 @@
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { keywordsApi, type KeywordOut } from '@/api/keywords'
+import { siteCredentialsApi, type SiteCredentialOut } from '@/api/siteCredentials'
 import { tasksApi, type TaskOut } from '@/api/tasks'
-import { settingsApi, type ScheduleOut } from '@/api/settings'
+import { settingsApi, type ScheduleOut, type ScraperLoginOut } from '@/api/settings'
 import { useKeywordsStore } from '@/stores/keywords'
 import { CITY_OPTIONS, cityName } from '@/utils/cities'
 import { INDUSTRY_TREE, industryNames } from '@/utils/industries'
@@ -222,15 +279,25 @@ const tasksLoading = ref(false)
 const creating = ref(false)
 const schedule = ref<ScheduleOut>({ enabled: false, interval_minutes: 60, keyword_ids: [] })
 const scraperConfig = ref({ max_pages: 50 })
+const credentials = ref<SiteCredentialOut[]>([])
+const scraperLogin = ref<ScraperLoginOut>({ enabled: false, credential_id: null })
 
 function inputStyle(desktopPx: string) {
   return isMobile.value ? { width: '100%' } : { width: desktopPx }
 }
 
-const taskForm = reactive<{ keyword_id: number | null; mode: string; max_pages: number | null }>({
+const taskForm = reactive<{
+  keyword_id: number | null
+  mode: string
+  max_pages: number | null
+  use_login: boolean
+  login_credential_id: number | null
+}>({
   keyword_id: null,
   mode: 'playwright',
   max_pages: null,
+  use_login: false,
+  login_credential_id: null,
 })
 
 const keywordDialog = reactive({
@@ -271,6 +338,27 @@ async function loadScraperConfig() {
   scraperConfig.value = await settingsApi.getScraperConfig()
 }
 
+async function loadCredentials() {
+  credentials.value = await siteCredentialsApi.list()
+}
+
+async function loadScraperLogin() {
+  scraperLogin.value = await settingsApi.getScraperLogin()
+}
+
+function siteLabel(site: string): string {
+  return site === '51job' ? '51job' : site
+}
+
+async function saveScraperLogin() {
+  try {
+    await settingsApi.updateScraperLogin(scraperLogin.value)
+    ElMessage.success('登录抓取默认已保存')
+  } catch {
+    // 拦截器已提示
+  }
+}
+
 async function saveSchedule() {
   try {
     await settingsApi.updateSchedule(schedule.value)
@@ -291,6 +379,7 @@ async function createTask() {
       keyword_id: taskForm.keyword_id,
       mode: taskForm.mode,
       max_pages: taskForm.max_pages,
+      login_credential_id: taskForm.use_login ? taskForm.login_credential_id : null,
     })
     ElMessage.success('任务已创建')
     taskDialogVisible.value = false
@@ -391,7 +480,7 @@ async function removeKeyword(row: KeywordOut) {
 
 onMounted(async () => {
   try {
-    await Promise.all([keywordsStore.fetch(), loadTasks(), loadSchedule(), loadScraperConfig()])
+    await Promise.all([keywordsStore.fetch(), loadTasks(), loadSchedule(), loadScraperConfig(), loadCredentials(), loadScraperLogin()])
   } catch {
     // 拦截器已提示
   }

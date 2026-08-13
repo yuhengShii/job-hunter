@@ -14,6 +14,7 @@
       成功 {{ task.success_count }} / 失败 {{ task.failed_count }}（共 {{ task.total_pages ?? '-' }} 页）
     </div>
     <div v-else class="task-progress">{{ task.error_message ?? '-' }}</div>
+    <div v-if="loginUsername" class="task-login">已登录：{{ loginUsername }}</div>
     <div class="task-time">{{ formatTime(task.start_time) }} / {{ formatTime(task.end_time) }}</div>
     <div class="task-actions">
       <el-button size="small" type="danger" @click="emit('remove')">删除</el-button>
@@ -26,7 +27,7 @@ import { computed } from 'vue'
 import type { TaskOut } from '@/api/tasks'
 import { formatTime, taskStatusText, taskStatusType } from '@/utils/format'
 
-const props = defineProps<{ task: TaskOut; keywordName: string }>()
+const props = defineProps<{ task: TaskOut; keywordName: string; loginUsername?: string }>()
 const emit = defineEmits<{ remove: [] }>()
 
 const progressPct = computed(() => {
@@ -42,5 +43,6 @@ const progressPct = computed(() => {
 .task-progress { margin-top: 8px; font-size: 13px; color: var(--el-text-color-regular); }
 .progress-text { margin-bottom: 4px; }
 .task-time { margin-top: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
+.task-login { margin-top: 6px; font-size: 12px; color: var(--el-color-warning); }
 .task-actions { margin-top: 8px; }
 </style>
