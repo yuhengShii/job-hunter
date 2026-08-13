@@ -24,6 +24,13 @@
         <el-form-item label="标签">
           <el-input v-model="query.tag" clearable style="width: 140px" @keyup.enter="search" />
         </el-form-item>
+        <el-form-item label="收藏">
+          <el-select v-model="query.favorite" style="width: 120px" @change="search">
+            <el-option label="全部" value="" />
+            <el-option label="已收藏" value="yes" />
+            <el-option label="未收藏" value="no" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="薪资区间">
           <el-input-number v-model="query.salary_min" :min="0" :step="1000" placeholder="最低" @change="search" />
           <span class="sep">~</span>
@@ -70,7 +77,20 @@
     </el-card>
 
     <el-card>
-      <el-table :data="page.items" v-loading="loading" @row-click="openDetail">
+      <div class="toolbar">
+        <span class="selected-info">已选 {{ selection.length }} 项</span>
+        <el-button type="primary" :disabled="selection.length === 0" @click="batchFavorite(true)">批量收藏</el-button>
+        <el-button :disabled="selection.length === 0" @click="batchFavorite(false)">批量取消收藏</el-button>
+      </div>
+      <el-table :data="page.items" v-loading="loading" @selection-change="onSelectionChange" @row-click="onRowClick">
+        <el-table-column type="selection" width="40" />
+        <el-table-column label="收藏" width="70" align="center">
+          <template #default="{ row }">
+            <el-button link :type="row.is_favorite ? 'warning' : 'info'" @click.stop="toggleFavorite(row)">
+              <el-icon :size="16"><StarFilled v-if="row.is_favorite" /><Star v-else /></el-icon>
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="title" label="职位" min-width="220" show-overflow-tooltip />
         <el-table-column label="公司" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.company_name ?? row.company_id ?? '-' }}</template>
@@ -130,9 +150,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 import { jobsApi, type JobOut, type JobPage, type JobQuery } from '@/api/jobs'
 import { formatSalaryRaw, formatTime } from '@/utils/format'
-import { jobsStateFromRoute } from '@/utils/jobsQuery'
+import { favoriteParam, jobsStateFromRoute } from '@/utils/jobsQuery'
 import JobDetailDialog from '@/components/JobDetailDialog.vue'
 
 const route = useRoute()
@@ -145,6 +166,7 @@ const detailJob = ref<JobOut | null>(null)
 const cityOptions = ref<string[]>([])
 const districtOptions = ref<string[]>([])
 const publishRange = ref<[string, string] | null>(null)
+const selection = ref<JobOut[]>([])
 
 function daysAgo(n: number): Date {
   const d = new Date()
@@ -168,6 +190,7 @@ const query = reactive<{
   area: string
   company_id: string
   tag: string
+  favorite: '' | 'yes' | 'no'
   salary_min: number | undefined
   salary_max: number | undefined
   primary_sort: '' | 'activity_score' | 'publish_time'
@@ -183,6 +206,7 @@ const query = reactive<{
   area: '',
   company_id: '',
   tag: '',
+  favorite: '',
   salary_min: undefined,
   salary_max: undefined,
   primary_sort: '',
@@ -201,6 +225,8 @@ async function load() {
     if (query.area) params.area = query.area
     if (query.company_id) params.company_id = query.company_id
     if (query.tag) params.tag = query.tag
+    const fav = favoriteParam(query.favorite)
+    if (fav !== undefined) params.favorite = fav
     if (query.salary_min != null) params.salary_min = query.salary_min
     if (query.salary_max != null) params.salary_max = query.salary_max
     if (publishRange.value) {
@@ -247,6 +273,7 @@ function reset() {
   query.area = ''
   query.company_id = ''
   query.tag = ''
+  query.favorite = ''
   query.salary_min = undefined
   query.salary_max = undefined
   query.primary_sort = ''
@@ -262,6 +289,44 @@ function reset() {
 function onPage(p: number) {
   query.page = p
   load()
+}
+
+function onRowClick(row: JobOut, column: { type?: string }) {
+  if (column.type === 'selection') return
+  openDetail(row)
+}
+
+function onSelectionChange(rows: JobOut[]) {
+  selection.value = rows
+}
+
+async function toggleFavorite(row: JobOut) {
+  try {
+    if (row.is_favorite) {
+      await jobsApi.removeFavorites([row.job_id])
+    } else {
+      await jobsApi.addFavorites([row.job_id])
+    }
+    load()
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+async function batchFavorite(add: boolean) {
+  const ids = selection.value.map((r) => r.job_id)
+  if (ids.length === 0) return
+  try {
+    if (add) {
+      await jobsApi.addFavorites(ids)
+    } else {
+      await jobsApi.removeFavorites(ids)
+    }
+    selection.value = []
+    load()
+  } catch {
+    // 拦截器已提示
+  }
 }
 
 async function openDetail(row: JobOut) {
@@ -294,6 +359,8 @@ onMounted(() => {
 
 <style scoped>
 .filter-card { margin-bottom: 16px; }
+.toolbar { margin-bottom: 12px; }
+.selected-info { margin-right: 12px; color: var(--el-text-color-secondary); }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .sep { margin: 0 8px; color: var(--el-text-color-secondary); }
 .tag { margin-right: 4px; }
