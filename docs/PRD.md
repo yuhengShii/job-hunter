@@ -50,6 +50,7 @@
 - degree/year：优先取 sensorsdata 的 jobDegree/jobYear，缺失时按卡片文本中"本科/大专/硕士…"与"N年及以上/N-M年…"关键词兜底，仍无则 NULL（历史数据无法回填，重抓后补齐）。
 - activity 由搜索卡片 `.joblist-item-jobinfo .tip` 的全部文案（`、` 拼接）构成；activity_score 按固定规则映射（规则见 §6），多标签取各标签最高分，无法识别或为空记 -1。
 - `GET /api/jobs` 响应中携带 `company_activity_score`（0-10，-1 表示未知）。
+- `GET /api/jobs` 与 `GET /api/jobs/{id}` 响应中携带 `applied`（该职位是否已投递；来源于投递任务 results 中 status 为 success/skipped 的 job_id，列表与详情接口一致）。
 
 ### 统计口径
 
