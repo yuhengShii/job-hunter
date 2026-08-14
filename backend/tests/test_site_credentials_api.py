@@ -122,7 +122,7 @@ def test_test_login_ok(client, monkeypatch):
         "site": "51job", "username": "13800000000", "password": "pw123",
     }).json()["id"]
 
-    async def _fake_run(site, username, password, headful=False):
+    async def _fake_run(site, username, password, headful=False, use_system_chrome=False):
         assert site == "51job" and username == "13800000000" and password == "pw123"
         return True, "登录成功"
 

@@ -5,10 +5,23 @@ from sqlalchemy import func, or_
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
-from backend.app.models import Company, Favorite, Job
+from backend.app.models import ApplyTask, Company, Favorite, Job
 from backend.app.schemas.job import FavoriteAddOut, FavoriteBatchIn, FavoriteRemoveOut, JobFilterOptions, JobOut, JobPage
 
 jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+# 投递结果中视为「已投递」的状态：success=本次投递成功，skipped=站点卡片已标"已投递"自动跳过
+_APPLIED_STATUSES = ("success", "skipped")
+
+
+def _applied_job_ids(db) -> set[str]:
+    """从全部投递任务的结果中收集已投递的 job_id（逐条结果状态判定）。"""
+    applied: set[str] = set()
+    for (results,) in db.query(ApplyTask.results).all():
+        for r in results or []:
+            if r.get("status") in _APPLIED_STATUSES and r.get("job_id"):
+                applied.add(r["job_id"])
+    return applied
 
 _SORT_FIELDS: dict[str, object] = {
     "publish_time": Job.publish_time,
@@ -31,7 +44,8 @@ def _parse_sort(sort: list[str]) -> list:
 
 
 def _with_company(jobs: list[Job], db) -> list[JobOut]:
-    """为职位附加公司名称、活跃度与收藏标记。"""
+    """为职位附加公司名称、活跃度、收藏与投递标记。"""
+    applied_ids = _applied_job_ids(db) if jobs else set()
     fav_ids: set[str] = set()
     if jobs:
         fav_ids = {
@@ -49,6 +63,7 @@ def _with_company(jobs: list[Job], db) -> list[JobOut]:
     for j in jobs:
         item = JobOut.model_validate(j)
         item.is_favorite = j.job_id in fav_ids
+        item.applied = j.job_id in applied_ids
         c = comp_map.get(j.company_id)
         if c:
             item.company_name = c.name

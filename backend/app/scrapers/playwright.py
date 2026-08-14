@@ -10,7 +10,12 @@ from urllib.parse import quote
 from playwright.async_api import TimeoutError as PWTimeoutError
 from playwright.async_api import async_playwright
 
-from backend.app.scrapers.applier import ApplyResult, ApplyTarget, apply_to_job
+from backend.app.scrapers.applier import (
+    ApplyResult,
+    ApplyTarget,
+    _search_keyword,
+    apply_job_group,
+)
 from backend.app.scrapers.auth import MANUAL_CAPTCHA_TIMEOUT, login
 from backend.app.scrapers.base import LoginCredential, PageResult, Scraper
 from backend.app.scrapers.captcha import solve_aliyun_captcha
@@ -37,6 +42,15 @@ def build_search_url(
 _JOB_CARD_SELECTOR = ".joblist-item"
 _MAX_RETRIES = 3
 _CAPTCHA_COOLDOWN = 90
+
+
+def _group_targets(targets: list[ApplyTarget]) -> list[list[ApplyTarget]]:
+    """按搜索关键词 + 城市分组（同组可在同一搜索页勾选后一键批量投递）。"""
+    groups: dict[tuple[str, str], list[ApplyTarget]] = {}
+    for t in targets:
+        key = (_search_keyword(t.title), t.city or "")
+        groups.setdefault(key, []).append(t)
+    return list(groups.values())
 _LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 _FINGERPRINT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
@@ -285,9 +299,10 @@ class PlaywrightScraper(Scraper):
     async def apply_to_jobs(
         self, targets: list[ApplyTarget]
     ) -> AsyncGenerator[ApplyResult, None]:
-        """逐条对职位执行投递。投递必须登录，登录失败抛 RuntimeError（由上层判任务失败）。
+        """批量投递：按搜索关键词分组，每组同一搜索页勾选后「一键投递」（页面代签）。
 
-        单条遇滑块验证码时：冷却 90s 重试一次（风控为滚动窗口，冷却后自动解除），
+        投递必须登录，登录失败抛 RuntimeError（由上层判任务失败）。
+        遇滑块验证码时：冷却 90s 重试一次（风控为滚动窗口，冷却后自动解除），
         仍拦截则降级有头模式供人工拖动兜底，再失败才记为失败。
         """
         await self._ensure_browser()
@@ -296,35 +311,45 @@ class PlaywrightScraper(Scraper):
             page, logged_in = await self._ensure_logged_in(page)
             if not logged_in:
                 raise RuntimeError("登录失败，无法投递")
-            for i, target in enumerate(targets):
+            groups = _group_targets(targets)
+            for i, group in enumerate(groups):
                 try:
-                    result = await apply_to_job(page, target)
+                    page, results = await self._apply_group_with_captcha(page, group)
                 except Exception as exc:
-                    logger.warning("投递异常: job_id=%s err=%s", target.job_id, exc)
-                    result = ApplyResult(target.job_id, "failed", f"投递异常：{exc}")
-                page, result = await self._retry_captcha(page, target, result)
-                yield result
-                if i < len(targets) - 1:
+                    logger.warning("投递异常: err=%s", exc)
+                    results = {
+                        t.job_id: ApplyResult(t.job_id, "failed", f"投递异常：{exc}")
+                        for t in group
+                    }
+                for r in results.values():
+                    yield r
+                if i < len(groups) - 1:
                     await asyncio.sleep(random.uniform(5.0, 10.0))
         finally:
             await page.close()
 
-    async def _retry_captcha(self, page, target: ApplyTarget, result: ApplyResult) -> tuple:
-        """滑块验证码兜底：冷却重试 + 有头人工拖动。返回 (可能重建的 page, 最终结果)。"""
-        if result.status != "captcha":
-            return page, result
-        logger.warning(
-            "投递遇滑块验证，冷却 %s 秒后重试: job_id=%s", _CAPTCHA_COOLDOWN, target.job_id
-        )
-        await asyncio.sleep(_CAPTCHA_COOLDOWN)
-        result = await apply_to_job(page, target)
-        if result.status == "captcha" and await self._degrade_to_headful():
-            logger.warning("滑块仍拦截，切换有头模式等待人工验证: job_id=%s", target.job_id)
-            page = await self._new_page()
-            result = await apply_to_job(page, target, manual_wait=MANUAL_CAPTCHA_TIMEOUT)
-        if result.status == "captcha":
-            result = ApplyResult(target.job_id, "failed", "验证码未通过")
-        return page, result
+    async def _apply_group_with_captcha(self, page, group: list[ApplyTarget]) -> tuple:
+        """对一组同关键词职位执行批量投递，含滑块冷却重试/有头兜底。
+
+        返回 (可能重建的 page, {job_id: ApplyResult})。
+        """
+        results = await apply_job_group(page, group)
+        if any(r.status == "captcha" for r in results.values()):
+            logger.warning(
+                "投递遇滑块验证，冷却 %s 秒后重试: keyword=%s",
+                _CAPTCHA_COOLDOWN,
+                group[0].title,
+            )
+            await asyncio.sleep(_CAPTCHA_COOLDOWN)
+            results = await apply_job_group(page, group)
+            if any(r.status == "captcha" for r in results.values()) and await self._degrade_to_headful():
+                logger.warning("滑块仍拦截，切换有头模式等待人工验证: keyword=%s", group[0].title)
+                page = await self._new_page()
+                results = await apply_job_group(page, group, manual_wait=MANUAL_CAPTCHA_TIMEOUT)
+            for job_id, r in results.items():
+                if r.status == "captcha":
+                    results[job_id] = ApplyResult(job_id, "failed", "验证码未通过")
+        return page, results
 
     async def _click_next_page(self, page, target_page_num: int) -> None:
         """51job 新版 SPA：URL pageNum 参数不生效（实测各页返回同一批职位），

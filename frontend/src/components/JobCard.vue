@@ -9,6 +9,7 @@
         @change="(v: string | number | boolean) => emit('select', Boolean(v))"
       />
       <span class="job-title">{{ job.title }}</span>
+      <el-tag v-if="job.applied" type="success" size="small" effect="light" class="applied-tag">已投递</el-tag>
       <span class="job-salary">{{ formatSalaryRaw(job.salary_raw) }}</span>
     </div>
     <div class="job-card-company">
@@ -59,6 +60,7 @@ const emit = defineEmits<{ click: []; 'toggle-favorite': []; select: [boolean] }
   white-space: nowrap;
 }
 .job-salary { color: #f56c6c; font-weight: 600; white-space: nowrap; }
+.applied-tag { flex-shrink: 0; }
 .job-card-company {
   display: flex;
   align-items: center;

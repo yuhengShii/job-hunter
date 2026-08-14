@@ -1,4 +1,5 @@
-from backend.app.models import Company, Job
+from backend.app.core.database import SessionLocal
+from backend.app.models import ApplyTask, Company, Job
 
 
 def test_list_jobs(client):
@@ -106,6 +107,40 @@ def test_get_job_detail(client):
     resp = client.get("/api/jobs/j1")
     assert resp.status_code == 200
     assert resp.json()["title"] == "Python工程师"
+
+
+def test_jobs_applied_flag(client):
+    with SessionLocal() as s:
+        s.add_all([
+            ApplyTask(status="success", results=[
+                {"job_id": "j1", "status": "success", "message": "投递成功"},
+                {"job_id": "j2", "status": "failed", "message": "简历不完整"},
+                {"job_id": "j3", "status": "pending"},
+            ]),
+            ApplyTask(status="success", results=[
+                {"job_id": "j3", "status": "skipped", "message": "已投递"},
+            ]),
+            ApplyTask(status="queued", results=[
+                {"job_id": "j5", "status": "pending"},
+            ]),
+        ])
+        s.commit()
+    resp = client.get("/api/jobs")
+    items = {i["job_id"]: i for i in resp.json()["items"]}
+    assert items["j1"]["applied"] is True   # success → 已投递
+    assert items["j2"]["applied"] is False  # failed → 未投递
+    assert items["j3"]["applied"] is True   # skipped（站点已标已投递）→ 已投递
+    assert items["j4"]["applied"] is False
+    assert items["j5"]["applied"] is False  # pending → 未投递
+    assert items["j6"]["applied"] is False
+    # 详情接口同样携带 applied
+    assert client.get("/api/jobs/j1").json()["applied"] is True
+    assert client.get("/api/jobs/j4").json()["applied"] is False
+
+
+def test_applied_flag_empty_db(client):
+    resp = client.get("/api/jobs")
+    assert all(i["applied"] is False for i in resp.json()["items"])
 
 
 def test_job_company_fields(client):

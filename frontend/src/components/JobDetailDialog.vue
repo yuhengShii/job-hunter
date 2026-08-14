@@ -13,6 +13,10 @@
       <el-descriptions-item label="城市">{{ job.city ?? '-' }}</el-descriptions-item>
       <el-descriptions-item label="区域">{{ job.area ?? '-' }}</el-descriptions-item>
       <el-descriptions-item label="公司">{{ companyName }}</el-descriptions-item>
+      <el-descriptions-item label="投递状态">
+        <el-tag v-if="job.applied" type="success" size="small" effect="light">已投递</el-tag>
+        <span v-else>未投递</span>
+      </el-descriptions-item>
       <el-descriptions-item label="标签">{{ (job.tags ?? []).join('、') || '-' }}</el-descriptions-item>
       <el-descriptions-item label="发布时间">{{ formatTime(job.publish_time) }}</el-descriptions-item>
       <el-descriptions-item label="来源">{{ job.source }}</el-descriptions-item>

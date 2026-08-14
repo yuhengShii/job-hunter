@@ -571,7 +571,7 @@ class _ApplyFakePage:
         pass
 
 
-def _setup_apply_scraper(monkeypatch, s, apply_seq, degrade_result=False):
+def _setup_apply_scraper(monkeypatch, s, group_seq, degrade_result=False):
     async def _ensure_browser():
         pass
 
@@ -586,14 +586,14 @@ def _setup_apply_scraper(monkeypatch, s, apply_seq, degrade_result=False):
             s._headful = True
         return degrade_result
 
-    async def _fake_apply_to_job(page, target, **kw):
-        return next(apply_seq)
+    async def _fake_apply_group(page, group, manual_wait=0.0):
+        return next(group_seq)
 
     monkeypatch.setattr(s, "_ensure_browser", _ensure_browser)
     monkeypatch.setattr(s, "_new_page", _new_page)
     monkeypatch.setattr(s, "_ensure_logged_in", _ensure_logged_in)
     monkeypatch.setattr(s, "_degrade_to_headful", _degrade)
-    monkeypatch.setattr(playwright_mod, "apply_to_job", _fake_apply_to_job)
+    monkeypatch.setattr(playwright_mod, "apply_job_group", _fake_apply_group)
 
 
 def test_apply_to_jobs_captcha_cooldown_then_retry(monkeypatch):
@@ -609,7 +609,10 @@ def test_apply_to_jobs_captcha_cooldown_then_retry(monkeypatch):
     _setup_apply_scraper(
         monkeypatch,
         s,
-        iter([ApplyResult("j1", "captcha", "验证码未通过"), ApplyResult("j1", "success", "投递成功")]),
+        iter([
+            {"j1": ApplyResult("j1", "captcha", "验证码未通过")},
+            {"j1": ApplyResult("j1", "success", "投递成功")},
+        ]),
     )
 
     async def run():
@@ -617,7 +620,7 @@ def test_apply_to_jobs_captcha_cooldown_then_retry(monkeypatch):
 
     out = asyncio.run(run())
     assert [r.status for r in out] == ["success"]
-    assert sleeps == [90]  # 冷却 90s 先于一切，单目标无页间延时
+    assert sleeps == [90]  # 冷却 90s 先于一切，单组无组间延时
 
 
 def test_apply_to_jobs_captcha_degrades_headful(monkeypatch):
@@ -629,9 +632,9 @@ def test_apply_to_jobs_captcha_degrades_headful(monkeypatch):
         monkeypatch,
         s,
         iter([
-            ApplyResult("j1", "captcha", "验证码未通过"),
-            ApplyResult("j1", "captcha", "验证码未通过"),
-            ApplyResult("j1", "success", "投递成功"),
+            {"j1": ApplyResult("j1", "captcha", "验证码未通过")},
+            {"j1": ApplyResult("j1", "captcha", "验证码未通过")},
+            {"j1": ApplyResult("j1", "success", "投递成功")},
         ]),
         degrade_result=True,
     )
@@ -653,8 +656,8 @@ def test_apply_to_jobs_captcha_gives_up(monkeypatch):
         monkeypatch,
         s,
         iter([
-            ApplyResult("j1", "captcha", "验证码未通过"),
-            ApplyResult("j1", "captcha", "验证码未通过"),
+            {"j1": ApplyResult("j1", "captcha", "验证码未通过")},
+            {"j1": ApplyResult("j1", "captcha", "验证码未通过")},
         ]),
         degrade_result=False,  # 已是 headless 且降级失败
     )
@@ -665,6 +668,21 @@ def test_apply_to_jobs_captcha_gives_up(monkeypatch):
     out = asyncio.run(run())
     assert out[0].status == "failed"
     assert "验证码" in out[0].message
+
+
+def test_group_targets_by_keyword_and_city():
+    from backend.app.scrapers.applier import ApplyTarget
+
+    targets = [
+        ApplyTarget("j1", "市场专员", city="上海"),
+        ApplyTarget("j2", "市场专员", city="上海"),
+        ApplyTarget("j3", "市场专员 （浦东）", city="上海"),   # 净化后同词 → 同组
+        ApplyTarget("j4", "采购工程师", city="上海"),
+        ApplyTarget("j5", "采购工程师", city="北京"),
+    ]
+    groups = playwright_mod._group_targets(targets)
+    sizes = sorted(len(g) for g in groups)
+    assert sizes == [1, 1, 3]
 
 
 def test_ensure_browser_uses_system_chrome(monkeypatch):

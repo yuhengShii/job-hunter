@@ -20,6 +20,7 @@ export interface JobOut {
   company_activity?: string | null
   company_activity_score?: number
   is_favorite: boolean
+  applied: boolean
   job_url: string | null
   created_at: string
   updated_at: string

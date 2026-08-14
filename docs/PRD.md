@@ -101,9 +101,11 @@
 
 ### 6.1 一键投递模块（applier）
 
-- 复用 `PlaywrightScraper` 的浏览器/登录/验证码能力：登录块抽取为 `_ensure_logged_in`（`search` 与投递共用）；新增 `apply_to_jobs(targets)` 逐条投递，条间随机延时 5-10s（比抓取更克制）。
-- **投递从搜索页发起**（实测详情页 jobs.51job.com 有独立阿里云滑块风控，Playwright 浏览器含真实 Chrome/有头手动拖动均被识别拒绝；搜索页 we.51job.com 风控宽松）：`apply_to_job` 按职位标题搜索 → 按 sensorsdata jobId 定位卡片 → 点卡片「投递」按钮 → 处理 SPA 弹窗序列（简历不完整提示 / 多城市选择 / 「选择需要投递的简历」+「立即申请」/ 附件简历「发送」/ 「投递成功」提示），检测成功或「已投递」。
-- 弹窗处理为 best-effort：未知弹窗把其文案写入失败原因，便于站点改版后定位；搜索页遇滑块验证码沿用冷却重试（90s）+ 有头人工拖动兜底（`manual_wait`）。
+- 复用 `PlaywrightScraper` 的浏览器/登录/验证码能力：登录块抽取为 `_ensure_logged_in`（`search` 与投递共用）；新增 `apply_to_jobs(targets)` 按关键词分组批量投递，组间随机延时 5-10s。
+- **投递从搜索页发起并批量勾选**（实测详情页 jobs.51job.com 有独立阿里云滑块风控，Playwright 浏览器含真实 Chrome/有头手动拖动均被识别拒绝；搜索页 we.51job.com 风控宽松）：`apply_job_group` 按搜索关键词分组 → 每个词只搜索一次（自动翻页 ≤4 页、城市收窄）→ 按 sensorsdata jobId 定位目标卡片 → 用 JS dispatch 勾选 `.ick` → 点工具栏 `button.p_but.all_apply`「一键投递」，页面 JS 一次发送**带合法签名的 light-apply-job 请求**（`applyJobList` 含全部选中 jobId，实测一次投 3 个成功）。
+- **为什么不直接调 API**：投递接口 `cupid.51job.com/open/user-apply/.../light-apply-job` 每个请求带 `sign` 签名头，由页面内阿里云接口保护 SDK 计算，Python 端无法复刻（实测 fetch/XHR 直投均返回「鉴权失败，签名错误」），故必须通过页面 UI 让页面代签。
+- 已投递卡片自动跳过；弹窗序列（简历不完整提示/「选择需要投递的简历」+「立即申请」/附件「发送」/「投递成功」）best-effort 处理，未知弹窗把文案写入失败原因。
+- 搜索页遇滑块验证码：冷却 90s 重试 + 有头模式人工拖动兜底（`manual_wait`）。
 - **投递必须登录**：登录失败判任务失败（不降级匿名）；凭据解密失败/缺失同样判失败。
 - 投递任务后台串行执行（`ApplyRunner` 线程），进程重启时 in_progress 置失败；选择器/文案随 51job 站点改版集中在 `applier.py` 维护。
 

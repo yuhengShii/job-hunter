@@ -28,6 +28,12 @@
             </el-button>
           </template>
         </el-table-column>
+        <el-table-column label="投递" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.applied" type="success" size="small" effect="light">已投递</el-tag>
+            <span v-else class="not-applied">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="title" label="职位" min-width="220" show-overflow-tooltip />
         <el-table-column label="公司" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.company_name ?? row.company_id ?? '-' }}</template>
@@ -380,6 +386,7 @@ onMounted(() => {
 .score-mid { color: #e6a23c; font-weight: 600; }
 .score-low { color: #909399; }
 .score-unknown { color: #ffffff; }
+.not-applied { color: var(--el-text-color-placeholder); }
 .mobile-toolbar {
   display: flex;
   align-items: center;
