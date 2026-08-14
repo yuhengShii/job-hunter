@@ -16,7 +16,7 @@
     开发模式：Vite dev server + 后端两个进程。
 
 .PARAMETER Rebuild
-    生产模式下强制重新构建前端（默认仅在 dist/index.html 缺失时构建）。
+    生产模式下强制重新构建前端（默认在 dist 缺失或源码有更新时自动构建）。
 
 .PARAMETER Stop
     清理模式：结束所有 job-hunter 相关进程（uvicorn/start.ps1 包装/vite）。
@@ -36,6 +36,24 @@ $venvUvicorn = Join-Path $root ".venv\Scripts\uvicorn.exe"
 
 function Test-PortBusy([int]$port) {
     return [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+}
+
+function Test-FrontendChanged([string]$distIndex, [string]$frontendDir) {
+    # 前端源码/配置是否比 dist/index.html 新（新则需重新构建）。
+    # 比较 src 目录最新文件时间 + index.html/vite.config.ts/tsconfig.json。
+    $distTime = (Get-Item $distIndex -ErrorAction SilentlyContinue).LastWriteTime
+    if (-not $distTime) { return $true }
+    $latest = $null
+    foreach ($p in @((Join-Path $frontendDir "src"), (Join-Path $frontendDir "index.html"), (Join-Path $frontendDir "vite.config.ts"), (Join-Path $frontendDir "tsconfig.json"))) {
+        if (-not (Test-Path $p)) { continue }
+        $item = Get-Item $p -ErrorAction SilentlyContinue
+        $t = if ($item.PSIsContainer) {
+            (Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+        }
+        else { $item.LastWriteTime }
+        if ($t -and (-not $latest -or $t -gt $latest)) { $latest = $t }
+    }
+    return [bool]($latest -and $latest -gt $distTime)
 }
 
 function Write-Step([string]$msg) {
@@ -150,8 +168,12 @@ if ($Dev) {
     }
 }
 else {
-    if ($Rebuild -or -not (Test-Path $distIndex)) {
-        Write-Step "构建前端（npm run build）"
+    $needBuild = $Rebuild -or -not (Test-Path $distIndex)
+    if (-not $needBuild) {
+        $needBuild = Test-FrontendChanged $distIndex $frontend
+    }
+    if ($needBuild) {
+        Write-Step "前端源码有更新，重新构建（npm run build）"
         Push-Location $frontend
         try {
             & $npm run build

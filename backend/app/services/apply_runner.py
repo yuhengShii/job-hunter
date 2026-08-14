@@ -120,6 +120,7 @@ async def execute_apply_task(task_id: int) -> None:
             title=r.get("title", ""),
             job_url=r.get("job_url"),
             city=r.get("city"),
+            sources=[(s[0], s[1]) for s in (r.get("sources") or [])],
         )
         for r in results
     ]

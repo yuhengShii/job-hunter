@@ -65,6 +65,29 @@ def test_create_explicit_job_ids(client):
     assert data["results"][0]["job_id"] == "j1"
 
 
+def test_create_snapshot_includes_sources(client):
+    """目标快照应包含源抓取条件（job_sources），供投递搜索使用。"""
+    from backend.app.core.database import SessionLocal
+    from backend.app.models import JobSource
+
+    c, cid = client
+    with SessionLocal() as s:
+        s.add_all([
+            JobSource(job_id="j1", source_keyword="采购", source_city="020000", source_industry="08,46,47"),
+            JobSource(job_id="j1", source_keyword="医疗采购", source_city="010000", source_industry=None),
+        ])
+        s.commit()
+    resp = c.post("/api/apply", json={"credential_id": cid, "job_ids": ["j1"]})
+    assert resp.status_code == 200
+    with SessionLocal() as s:
+        from backend.app.models import ApplyTask
+
+        row = s.get(ApplyTask, resp.json()["id"])
+        sources = row.results[0]["sources"]
+    # 带行业筛选的在前，其次 last_seen 新到旧
+    assert sources == [["020000", "08,46,47"], ["010000", None]]
+
+
 def test_create_no_jobs_400(client):
     c, cid = client
     resp = c.post("/api/apply", json={"credential_id": cid})

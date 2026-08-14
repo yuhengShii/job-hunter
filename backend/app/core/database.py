@@ -192,6 +192,40 @@ def _migrate_tasks_login_credential_id(engine) -> None:
     logger.info("迁移完成：scrape_tasks 增加 login_credential_id 列")
 
 
+def _migrate_job_sources(engine) -> None:
+    """回填 job_sources：按任务窗口把每个任务命中的职位与该任务的条件关联。
+
+    表本身由 create_all 创建；本迁移只做历史数据回填（幂等）：
+    对 success/partial_success 任务，把 jobs.updated_at 落在任务
+    [start_time, end_time] 窗口内的职位写入 (job_id, keyword, city, industry)。
+    同一职位被多个不同条件的任务命中 → 多行共存；同条件重复命中 → INSERT OR IGNORE 保持首行。
+    """
+    insp = inspect(engine)
+    if "job_sources" not in insp.get_table_names() or "jobs" not in insp.get_table_names():
+        return
+    with engine.begin() as conn:
+        if conn.execute(text("SELECT COUNT(*) FROM job_sources")).scalar():
+            return  # 已有回填数据，幂等跳过
+        rows = conn.execute(
+            text(
+                "SELECT k.keyword, k.city, k.industry, t.start_time, t.end_time "
+                "FROM scrape_tasks t JOIN keywords k ON t.keyword_id = k.id "
+                "WHERE t.status IN ('success', 'partial_success') AND t.start_time IS NOT NULL"
+            )
+        ).fetchall()
+        for keyword, city, industry, start, end in rows:
+            conn.execute(
+                text(
+                    "INSERT OR IGNORE INTO job_sources "
+                    "(job_id, source_keyword, source_city, source_industry, first_seen_at, last_seen_at) "
+                    "SELECT job_id, :kw, :city, :industry, updated_at, updated_at FROM jobs "
+                    "WHERE updated_at >= :start AND updated_at <= :end"
+                ),
+                {"kw": keyword, "city": city, "industry": industry, "start": start, "end": end},
+            )
+    logger.info("迁移完成：回填 job_sources（%s 条任务）", len(rows))
+
+
 def init_db(config: Config) -> None:
     global engine
     engine = create_engine(config.database_url, connect_args={"check_same_thread": False})
@@ -207,3 +241,4 @@ def init_db(config: Config) -> None:
     _migrate_tasks_max_pages(engine)
     _migrate_tasks_login_credential_id(engine)
     _migrate_companies_drop_website(engine)
+    _migrate_job_sources(engine)

@@ -13,7 +13,7 @@ from playwright.async_api import async_playwright
 from backend.app.scrapers.applier import (
     ApplyResult,
     ApplyTarget,
-    _search_keyword,
+    _CITY_CODE,
     apply_job_group,
 )
 from backend.app.scrapers.auth import MANUAL_CAPTCHA_TIMEOUT, login
@@ -44,12 +44,25 @@ _MAX_RETRIES = 3
 _CAPTCHA_COOLDOWN = 90
 
 
-def _group_targets(targets: list[ApplyTarget]) -> list[list[ApplyTarget]]:
-    """按搜索关键词 + 城市分组（同组可在同一搜索页勾选后一键批量投递）。"""
-    groups: dict[tuple[str, str], list[ApplyTarget]] = {}
+def _expand_search_units(targets: list[ApplyTarget]) -> list[dict]:
+    """每个职位按源条件展开为搜索单元（同职位多条件 → 多单元，带行业筛选的在前）。
+
+    无源条件的职位用「职位城市名→编码 + 无行业」兜底。
+    """
+    units = []
     for t in targets:
-        key = (_search_keyword(t.title), t.city or "")
-        groups.setdefault(key, []).append(t)
+        sources = t.sources or [(_CITY_CODE.get(t.city or "", "000000"), None)]
+        for city, industry in sources:
+            units.append({"title": t.title, "city": city, "industry": industry, "target": t})
+    return units
+
+
+def _group_search_units(units: list[dict]) -> list[list[dict]]:
+    """按（标题, 城市, 行业）分组，保持首次出现顺序（源条件已按精准度排序）。"""
+    groups: dict[tuple[str, str, str | None], list[dict]] = {}
+    for u in units:
+        key = (u["title"], u["city"], u["industry"])
+        groups.setdefault(key, []).append(u)
     return list(groups.values())
 _LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 _FINGERPRINT_SCRIPT = """
@@ -299,7 +312,11 @@ class PlaywrightScraper(Scraper):
     async def apply_to_jobs(
         self, targets: list[ApplyTarget]
     ) -> AsyncGenerator[ApplyResult, None]:
-        """批量投递：按搜索关键词分组，每组同一搜索页勾选后「一键投递」（页面代签）。
+        """批量投递：按（真实标题, 源城市, 源行业）展开搜索单元并分组。
+
+        每个职位按其全部源抓取条件展开（带行业筛选的窄搜索在前），各组在同一
+        搜索页勾选后「一键投递」（页面代签）；某职位 success/skipped 后从后续
+        组剔除（绝不重复投），failed 保留在其它条件的组里继续尝试。
 
         投递必须登录，登录失败抛 RuntimeError（由上层判任务失败）。
         遇滑块验证码时：冷却 90s 重试一次（风控为滚动窗口，冷却后自动解除），
@@ -311,29 +328,50 @@ class PlaywrightScraper(Scraper):
             page, logged_in = await self._ensure_logged_in(page)
             if not logged_in:
                 raise RuntimeError("登录失败，无法投递")
-            groups = _group_targets(targets)
+            groups = _group_search_units(_expand_search_units(targets))
+            final: dict[str, ApplyResult] = {}
             for i, group in enumerate(groups):
+                title = group[0]["title"]
+                city = group[0]["city"]
+                industry = group[0]["industry"]
+                group_targets = [
+                    u["target"]
+                    for u in group
+                    if u["target"].job_id not in final
+                    or final[u["target"].job_id].status == "failed"
+                ]
+                if not group_targets:
+                    continue
                 try:
-                    page, results = await self._apply_group_with_captcha(page, group)
+                    page, results = await self._apply_group_with_captcha(
+                        page, group_targets, city, industry
+                    )
                 except Exception as exc:
                     logger.warning("投递异常: err=%s", exc)
                     results = {
                         t.job_id: ApplyResult(t.job_id, "failed", f"投递异常：{exc}")
-                        for t in group
+                        for t in group_targets
                     }
-                for r in results.values():
-                    yield r
+                for job_id, r in results.items():
+                    final[job_id] = r
                 if i < len(groups) - 1:
                     await asyncio.sleep(random.uniform(5.0, 10.0))
+            for t in targets:
+                if t.job_id not in final:
+                    final[t.job_id] = ApplyResult(t.job_id, "failed", "未找到可用的搜索条件")
+            for r in final.values():
+                yield r
         finally:
             await page.close()
 
-    async def _apply_group_with_captcha(self, page, group: list[ApplyTarget]) -> tuple:
-        """对一组同关键词职位执行批量投递，含滑块冷却重试/有头兜底。
+    async def _apply_group_with_captcha(
+        self, page, group: list[ApplyTarget], city: str, industry: str | None
+    ) -> tuple:
+        """对一组同（标题,城市,行业）职位执行批量投递，含滑块冷却重试/有头兜底。
 
         返回 (可能重建的 page, {job_id: ApplyResult})。
         """
-        results = await apply_job_group(page, group)
+        results = await apply_job_group(page, group, city, industry)
         if any(r.status == "captcha" for r in results.values()):
             logger.warning(
                 "投递遇滑块验证，冷却 %s 秒后重试: keyword=%s",
@@ -341,11 +379,13 @@ class PlaywrightScraper(Scraper):
                 group[0].title,
             )
             await asyncio.sleep(_CAPTCHA_COOLDOWN)
-            results = await apply_job_group(page, group)
+            results = await apply_job_group(page, group, city, industry)
             if any(r.status == "captcha" for r in results.values()) and await self._degrade_to_headful():
                 logger.warning("滑块仍拦截，切换有头模式等待人工验证: keyword=%s", group[0].title)
                 page = await self._new_page()
-                results = await apply_job_group(page, group, manual_wait=MANUAL_CAPTCHA_TIMEOUT)
+                results = await apply_job_group(
+                    page, group, city, industry, manual_wait=MANUAL_CAPTCHA_TIMEOUT
+                )
             for job_id, r in results.items():
                 if r.status == "captcha":
                     results[job_id] = ApplyResult(job_id, "failed", "验证码未通过")

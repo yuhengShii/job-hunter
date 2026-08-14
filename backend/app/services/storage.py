@@ -3,14 +3,43 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.models import Company, Job
+from backend.app.models import Company, Job, JobSource
 from backend.app.scrapers.base import CompanyDraft, JobDraft
 from backend.app.services.activity import score_activity
 
 logger = logging.getLogger("job_hunter")
 
 
-def upsert_jobs(db: Session, jobs: list[JobDraft]) -> int:
+def upsert_job_source(db: Session, job_id: str, source: tuple[str, str, str | None]) -> int:
+    """记录「某职位被某组搜索条件命中过」：同条件只刷新 last_seen_at，不同条件新增一行。"""
+    keyword, city, industry = source
+    row = (
+        db.query(JobSource)
+        .filter_by(
+            job_id=job_id,
+            source_keyword=keyword,
+            source_city=city,
+            source_industry=industry,
+        )
+        .first()
+    )
+    if row is None:
+        db.add(
+            JobSource(
+                job_id=job_id,
+                source_keyword=keyword,
+                source_city=city,
+                source_industry=industry,
+            )
+        )
+        return 1
+    row.last_seen_at = datetime.now()
+    return 0
+
+
+def upsert_jobs(
+    db: Session, jobs: list[JobDraft], source: tuple[str, str, str | None] | None = None
+) -> int:
     count = 0
     for j in jobs:
         existing = db.query(Job).filter_by(job_id=j.job_id).first()
@@ -48,6 +77,8 @@ def upsert_jobs(db: Session, jobs: list[JobDraft]) -> int:
             existing.company_id = j.company_id
             existing.job_url = j.job_url
             existing.updated_at = datetime.now()
+        if source is not None:
+            upsert_job_source(db, j.job_id, source)
         count += 1
     db.commit()
     return count

@@ -11,13 +11,13 @@
   带由阿里云接口保护 SDK 计算的 sign 签名头，Python 端无法复刻，故必须通过
   页面 UI（勾选 + 一键投递）让页面代为签名。
 
-本模块按「搜索关键词」分组：每个关键词只搜索一次（自动翻页），把该词下所有
-目标职位勾选后一键投递。选择器/文案随站点改版集中在本文件维护。
+投递搜索策略：关键字用**真实岗位标题**，城市/行业筛选用**该职位被命中过的源
+抓取条件**（job_sources 表，一个职位可有多组条件，带行业筛选的窄搜索优先），
+与当初抓取到它的搜索条件一致，实现最精准命中。选择器/文案随站点改版集中维护。
 """
 
 import logging
-import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import quote
 
 from backend.app.scrapers.captcha import solve_aliyun_captcha, wait_aliyun_manual
@@ -29,9 +29,11 @@ _SEARCH_URL = (
 )
 _CARD_SELECTOR = ".joblist-item"
 _BATCH_APPLY_SELECTOR = "button.p_but.all_apply, .p_but.all_apply"
-_MAX_SEARCH_PAGES = 4
+# 翻页上限：与抓取同条件搜索时职位可能排得较深（实测源条件下曾见第 7 页），
+# 抓取任务本身会翻到 50 页，投递按同一条件翻 15 页足够覆盖大部分情况
+_MAX_SEARCH_PAGES = 15
 
-# 已知城市编码（与前端 utils/cities.ts 一致），其余城市回退全国搜索
+# 已知城市编码（与前端 utils/cities.ts 一致），无源条件时按职位城市名兜底
 _CITY_CODE = {
     "北京": "010000",
     "上海": "020000",
@@ -40,9 +42,6 @@ _CITY_CODE = {
     "杭州": "080200",
     "郑州": "170200",
 }
-
-# 标题搜索词净化：去掉括号后缀与「--」「 - 」后的部分（如 "项目运作实习生 （上海）"→"项目运作实习生"）
-_STRIP_SUFFIX_RE = re.compile(r"[（(][^）)]*[)）]|--.*$| - .*$")
 
 # 弹窗/状态文案（best-effort，实测后按需增补）
 _DONE_TEXTS = ("已投递", "已申请")
@@ -138,6 +137,8 @@ class ApplyTarget:
     title: str
     job_url: str | None = None
     city: str | None = None
+    # 源抓取条件列表 [(source_city, source_industry)]，带行业筛选的在前（由调用方排序）
+    sources: list[tuple[str, str | None]] = field(default_factory=list)
 
 
 @dataclass
@@ -151,14 +152,18 @@ def build_job_url(target: ApplyTarget) -> str:
     return target.job_url or f"https://jobs.51job.com/all/{target.job_id}.html"
 
 
-def build_search_url(keyword: str, page_num: int = 1, area: str = "000000") -> str:
-    return _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
+def build_search_url(keyword: str, page_num: int = 1, area: str = "000000", industry: str | None = None) -> str:
+    url = _SEARCH_URL.format(kw=quote(keyword), n=page_num, area=area)
+    if industry:
+        url += f"&industry={quote(industry)}"
+    return url
 
 
-def _search_keyword(title: str) -> str:
-    """从职位标题生成搜索关键词（去掉括号后缀与分隔符后缀）。"""
-    kw = _STRIP_SUFFIX_RE.sub("", title or "").strip()
-    return kw or (title or "").strip()
+def _first_source(target: ApplyTarget) -> tuple[str, str | None]:
+    """取职位的第一组搜索条件（源条件优先，无源条件按职位城市名兜底）。"""
+    if target.sources:
+        return target.sources[0]
+    return _CITY_CODE.get(target.city or "", "000000"), None
 
 
 # ---- 页面操作 helper（可被测试 monkeypatch） ----
@@ -274,21 +279,27 @@ async def _batch_dialog(page) -> ApplyResult:
 
 # ---- 主流程 ----
 
-async def apply_job_group(page, targets: list[ApplyTarget], manual_wait: float = 0.0) -> dict:
-    """在同一搜索页上批量投递一组同关键词职位。返回 {job_id: ApplyResult}。
+async def apply_job_group(
+    page,
+    targets: list[ApplyTarget],
+    area: str = "000000",
+    industry: str | None = None,
+    manual_wait: float = 0.0,
+) -> dict:
+    """对一组**同标题**职位，用给定的城市/行业条件搜索并批量投递。返回 {job_id: ApplyResult}。
 
+    搜索关键字 = 真实岗位标题；城市/行业 = 该组职位的源抓取条件（由调用方展开）。
     manual_wait > 0 表示有头人工模式：搜索页遇滑块时跳过自动拖动，
     等待人工拖动通过（最多 manual_wait 秒）。
     """
     results: dict[str, ApplyResult | None] = {t.job_id: None for t in targets}
-    keyword = _search_keyword(targets[0].title)
-    area = _CITY_CODE.get(targets[0].city or "", "000000")
+    keyword = targets[0].title
     page_num = 1
     checked = 0
     pending = list(targets)
     while page_num <= _MAX_SEARCH_PAGES and pending:
         if page_num == 1:
-            url = build_search_url(keyword, 1, area)
+            url = build_search_url(keyword, 1, area, industry)
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
             except Exception as exc:
@@ -333,7 +344,7 @@ async def apply_job_group(page, targets: list[ApplyTarget], manual_wait: float =
                         results[job_id] = ApplyResult(job_id, "failed", "未找到一键投递按钮")
         pending = [t for t in pending if results[t.job_id] is None]
         page_num += 1
-    for t in pending:
+    for t in targets:
         if results[t.job_id] is None:
             results[t.job_id] = ApplyResult(
                 t.job_id, "failed", f"搜索结果前 {checked} 页未找到该职位（可能已下架）"
@@ -344,6 +355,7 @@ async def apply_job_group(page, targets: list[ApplyTarget], manual_wait: float =
 async def apply_to_job(
     page, target: ApplyTarget, goto_timeout: int = 60000, manual_wait: float = 0.0
 ) -> ApplyResult:
-    """单职位投递（apply_job_group 的单元素版本，保留兼容）。"""
-    results = await apply_job_group(page, [target], manual_wait=manual_wait)
+    """单职位投递（用第一组源条件，apply_job_group 的单元素版本，保留兼容）。"""
+    area, industry = _first_source(target)
+    results = await apply_job_group(page, [target], area, industry, manual_wait=manual_wait)
     return results.get(target.job_id) or ApplyResult(target.job_id, "failed", "未知错误")

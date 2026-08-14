@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from backend.app.api.deps import get_current_user, get_db
 from backend.app.core.exceptions import AppError
-from backend.app.models import ApplyTask, Favorite, Job, SiteCredential, TaskStatus
+from backend.app.models import ApplyTask, Favorite, Job, JobSource, SiteCredential, TaskStatus
 from backend.app.schemas.apply import ApplyTaskCreate, ApplyTaskOut
 
 apply_router = APIRouter(prefix="/api/apply", tags=["apply"])
@@ -10,8 +10,29 @@ apply_router = APIRouter(prefix="/api/apply", tags=["apply"])
 _RUNNING = (TaskStatus.QUEUED.value, TaskStatus.IN_PROGRESS.value)
 
 
+def _job_sources(db, job_id: str) -> list[list[str | None]]:
+    """职位被命中过的源搜索条件 [(source_city, source_industry)]。
+
+    带行业筛选（更精准）的在前，其次按 last_seen_at 新到旧；同 (city, industry) 去重。
+    """
+    rows = (
+        db.query(JobSource)
+        .filter(JobSource.job_id == job_id)
+        .order_by(JobSource.source_industry.is_(None), JobSource.last_seen_at.desc())
+        .all()
+    )
+    seen: set[tuple[str, str | None]] = set()
+    out: list[list[str | None]] = []
+    for r in rows:
+        key = (r.source_city, r.source_industry)
+        if key not in seen:
+            seen.add(key)
+            out.append([r.source_city, r.source_industry])
+    return out
+
+
 def _resolve_targets(db, job_ids: list[str] | None) -> list[dict]:
-    """解析投递目标为 [{job_id, title, job_url, city}]；job_ids 缺省 = 全部收藏。"""
+    """解析投递目标为 [{job_id, title, job_url, city, sources}]；job_ids 缺省 = 全部收藏。"""
     if job_ids is not None:
         ids = list(dict.fromkeys(job_ids))
         jobs = {j.job_id: j for j in db.query(Job).filter(Job.job_id.in_(ids)).all()}
@@ -21,6 +42,7 @@ def _resolve_targets(db, job_ids: list[str] | None) -> list[dict]:
                 "title": jobs[jid].title,
                 "job_url": jobs[jid].job_url,
                 "city": jobs[jid].city,
+                "sources": _job_sources(db, jid),
             }
             for jid in ids
             if jid in jobs
@@ -33,6 +55,7 @@ def _resolve_targets(db, job_ids: list[str] | None) -> list[dict]:
             "title": jobs[jid].title,
             "job_url": jobs[jid].job_url,
             "city": jobs[jid].city,
+            "sources": _job_sources(db, jid),
         }
         for jid in fav_job_ids
         if jid in jobs
@@ -57,6 +80,7 @@ def create_apply_task(body: ApplyTaskCreate, db=Depends(get_db), user=Depends(ge
             "title": t["title"],
             "job_url": t["job_url"],
             "city": t["city"],
+            "sources": t["sources"],
             "status": "pending",
             "message": "",
         }

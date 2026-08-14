@@ -102,7 +102,11 @@ async def execute_task(task_id: int) -> None:
                     task.failed_count += 1
                 else:
                     task.success_count += 1
-                    upsert_jobs(db, result.jobs)
+                    upsert_jobs(
+                        db,
+                        result.jobs,
+                        source=(kw_text, kw_area, kw_industry),
+                    )
                     upsert_companies(db, result.companies)
                     task.total_found += len(result.jobs)
                 task.last_page = result.page_num

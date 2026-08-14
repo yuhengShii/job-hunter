@@ -1,7 +1,7 @@
 from backend.app.core.database import SessionLocal, init_db
-from backend.app.models import Company, Job
+from backend.app.models import Company, Job, JobSource
 from backend.app.scrapers.base import CompanyDraft, JobDraft
-from backend.app.services.storage import upsert_companies, upsert_jobs
+from backend.app.services.storage import upsert_companies, upsert_jobs, upsert_job_source
 
 
 def test_upsert_jobs_updates_existing(config):
@@ -15,6 +15,45 @@ def test_upsert_jobs_updates_existing(config):
         job = s.query(Job).filter_by(job_id="j1").one()
         assert job.title == "新标题"
         assert job.tags == ["b"]
+
+
+def test_upsert_jobs_stores_source_conditions(config):
+    init_db(config)
+    with SessionLocal() as s:
+        upsert_jobs(
+            s,
+            [JobDraft(job_id="j1", title="采购专员")],
+            source=("采购", "020000", "08,46,47"),
+        )
+        s.commit()
+        rows = s.query(JobSource).filter_by(job_id="j1").all()
+        assert len(rows) == 1
+        assert (rows[0].source_keyword, rows[0].source_city, rows[0].source_industry) == (
+            "采购", "020000", "08,46,47",
+        )
+        first_seen = rows[0].first_seen_at
+
+
+def test_upsert_job_source_same_condition_refreshes(config):
+    init_db(config)
+    with SessionLocal() as s:
+        upsert_job_source(s, "j1", ("采购", "020000", "08,46,47"))
+        s.commit()
+        upsert_job_source(s, "j1", ("采购", "020000", "08,46,47"))
+        s.commit()
+        rows = s.query(JobSource).filter_by(job_id="j1").all()
+        assert len(rows) == 1  # 同条件只刷新，不新增
+
+
+def test_upsert_job_source_different_conditions_coexist(config):
+    init_db(config)
+    with SessionLocal() as s:
+        upsert_job_source(s, "j1", ("采购", "020000", "08,46,47"))
+        s.commit()
+        upsert_job_source(s, "j1", ("医疗采购", "010000", None))
+        s.commit()
+        rows = s.query(JobSource).filter_by(job_id="j1").all()
+        assert len(rows) == 2  # 不同关键字/城市/行业 → 多行共存
 
 
 def test_upsert_jobs_stores_degree_and_year(config):

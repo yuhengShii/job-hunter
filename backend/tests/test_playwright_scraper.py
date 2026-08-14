@@ -109,6 +109,10 @@ async def _noop_sleep(delay):
     pass
 
 
+async def _noop_async():
+    pass
+
+
 def _setup(monkeypatch, launches):
     monkeypatch.setattr(playwright_mod, "async_playwright", lambda: _FakePW(launches))
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
@@ -586,7 +590,7 @@ def _setup_apply_scraper(monkeypatch, s, group_seq, degrade_result=False):
             s._headful = True
         return degrade_result
 
-    async def _fake_apply_group(page, group, manual_wait=0.0):
+    async def _fake_apply_group(page, group, area="000000", industry=None, manual_wait=0.0):
         return next(group_seq)
 
     monkeypatch.setattr(s, "_ensure_browser", _ensure_browser)
@@ -670,19 +674,61 @@ def test_apply_to_jobs_captcha_gives_up(monkeypatch):
     assert "验证码" in out[0].message
 
 
-def test_group_targets_by_keyword_and_city():
+def test_expand_and_group_search_units():
     from backend.app.scrapers.applier import ApplyTarget
 
     targets = [
-        ApplyTarget("j1", "市场专员", city="上海"),
-        ApplyTarget("j2", "市场专员", city="上海"),
-        ApplyTarget("j3", "市场专员 （浦东）", city="上海"),   # 净化后同词 → 同组
-        ApplyTarget("j4", "采购工程师", city="上海"),
-        ApplyTarget("j5", "采购工程师", city="北京"),
+        ApplyTarget("j1", "采购专员", city="上海", sources=[("020000", "08,46,47"), ("000000", None)]),
+        ApplyTarget("j2", "采购专员", city="上海", sources=[("020000", "08,46,47")]),
+        ApplyTarget("j3", "办公室行政专员", city="上海", sources=[]),  # 无源 → 城市兜底
     ]
-    groups = playwright_mod._group_targets(targets)
-    sizes = sorted(len(g) for g in groups)
-    assert sizes == [1, 1, 3]
+    units = playwright_mod._expand_search_units(targets)
+    assert len(units) == 4  # j1 两条件 → 2 单元，j2 1 单元，j3 兜底 1 单元
+    groups = playwright_mod._group_search_units(units)
+    keys = sorted((g[0]["title"], g[0]["city"], g[0]["industry"]) for g in groups)
+    assert keys == [
+        ("办公室行政专员", "020000", None),
+        ("采购专员", "000000", None),
+        ("采购专员", "020000", "08,46,47"),
+    ]
+    # 同组内：j1/j2 同标题同条件归一组
+    group_020000 = [g for g in groups if g[0]["city"] == "020000" and g[0]["industry"] == "08,46,47"][0]
+    assert {u["target"].job_id for u in group_020000} == {"j1", "j2"}
+
+
+def test_apply_to_jobs_tries_next_source_after_failed(monkeypatch):
+    """同一职位两组源条件：第一组未找到(failed)，第二组投成(success) → 最终 success 且只投一次。"""
+    from backend.app.scrapers.applier import ApplyResult, ApplyTarget
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
+    s = PlaywrightScraper(headful=False)
+
+    async def _fake_apply_group(page, group, area="000000", industry=None, manual_wait=0.0):
+        if industry == "08,46,47":
+            return {"j1": ApplyResult("j1", "failed", "未找到该职位")}
+        return {"j1": ApplyResult("j1", "success", "投递成功")}
+
+    monkeypatch.setattr(playwright_mod, "apply_job_group", _fake_apply_group)
+    monkeypatch.setattr(s, "_ensure_browser", _noop_async)
+
+    async def _new_page():
+        return _ApplyFakePage()
+
+    monkeypatch.setattr(s, "_new_page", _new_page)
+
+    async def _ensure_logged_in(page):
+        return page, True
+
+    monkeypatch.setattr(s, "_ensure_logged_in", _ensure_logged_in)
+    monkeypatch.setattr(s, "_degrade_to_headful", lambda: False)
+
+    async def run():
+        return [r async for r in s.apply_to_jobs(
+            [ApplyTarget("j1", "采购专员", city="上海", sources=[("020000", "08,46,47"), ("020000", None)])]
+        )]
+
+    out = asyncio.run(run())
+    assert [r.status for r in out] == ["success"]  # 第二组条件投成，覆盖第一组 failed
 
 
 def test_ensure_browser_uses_system_chrome(monkeypatch):

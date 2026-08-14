@@ -1,7 +1,13 @@
 import asyncio
 
 from backend.app.scrapers import applier
-from backend.app.scrapers.applier import ApplyResult, ApplyTarget, apply_job_group, apply_to_job, build_job_url
+from backend.app.scrapers.applier import (
+    ApplyResult,
+    ApplyTarget,
+    apply_job_group,
+    apply_to_job,
+    build_job_url,
+)
 
 
 class _Page:
@@ -36,8 +42,8 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _target(job_id="j1", title="采购工程师", city="上海"):
-    return ApplyTarget(job_id=job_id, title=title, city=city)
+def _target(job_id="j1", title="采购工程师", city="上海", sources=None):
+    return ApplyTarget(job_id=job_id, title=title, city=city, sources=sources or [])
 
 
 def _patch_helpers(
@@ -80,26 +86,29 @@ def _patch_helpers(
     monkeypatch.setattr(applier, "_visible_dialog", _visible)
 
 
-def test_batch_success(monkeypatch):
+def test_batch_success_with_source_conditions(monkeypatch):
     page = _Page()
-    _patch_helpers(
-        monkeypatch,
-        select={"selected": ["j1", "j2"], "skipped": []},
-    )
+    _patch_helpers(monkeypatch, select={"selected": ["j1", "j2"], "skipped": []})
     targets = [_target("j1"), _target("j2")]
-    results = _run(apply_job_group(page, targets))
+    results = _run(apply_job_group(page, targets, "020000", "08,46,47"))
     assert {r.status for r in results.values()} == {"success"}
-    assert page.goto_url.startswith("https://we.51job.com/pc/search?keyword=")
-    assert "jobArea=020000" in page.goto_url  # 上海 → 城市收窄
+    # 真实岗位标题 + 源城市 + 源行业
+    assert "keyword=%E9%87%87%E8%B4%AD%E5%B7%A5%E7%A8%8B%E5%B8%88" in page.goto_url
+    assert "jobArea=020000" in page.goto_url
+    assert "industry=08%2C46%2C47" in page.goto_url
+
+
+def test_batch_no_industry_param_when_none(monkeypatch):
+    page = _Page()
+    _patch_helpers(monkeypatch, select={"selected": ["j1"], "skipped": []})
+    _run(apply_job_group(page, [_target()], "020000", None))
+    assert "industry" not in page.goto_url
 
 
 def test_batch_skipped_when_already_applied(monkeypatch):
     page = _Page()
-    _patch_helpers(
-        monkeypatch,
-        select={"selected": ["j1"], "skipped": ["j2"]},
-    )
-    results = _run(apply_job_group(page, [_target("j1"), _target("j2")]))
+    _patch_helpers(monkeypatch, select={"selected": ["j1"], "skipped": ["j2"]})
+    results = _run(apply_job_group(page, [_target("j1"), _target("j2")], "020000", None))
     assert results["j1"].status == "success"
     assert results["j2"].status == "skipped"
 
@@ -107,19 +116,15 @@ def test_batch_skipped_when_already_applied(monkeypatch):
 def test_batch_not_found_on_all_pages(monkeypatch):
     page = _Page()
     _patch_helpers(monkeypatch, select={"selected": [], "skipped": []})
-    results = _run(apply_job_group(page, [_target()]))
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "failed"
     assert "未找到该职位" in results["j1"].message
 
 
 def test_batch_apply_button_missing(monkeypatch):
     page = _Page()
-    _patch_helpers(
-        monkeypatch,
-        select={"selected": ["j1"], "skipped": []},
-        batch_apply=False,
-    )
-    results = _run(apply_job_group(page, [_target()]))
+    _patch_helpers(monkeypatch, select={"selected": ["j1"], "skipped": []}, batch_apply=False)
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "failed"
     assert "一键投递按钮" in results["j1"].message
 
@@ -131,7 +136,7 @@ def test_batch_dialog_failed_message(monkeypatch):
         select={"selected": ["j1"], "skipped": []},
         batch_result=ApplyResult("", "failed", "弹窗异常：神秘弹窗"),
     )
-    results = _run(apply_job_group(page, [_target()]))
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "failed"
     assert "神秘弹窗" in results["j1"].message
 
@@ -143,7 +148,7 @@ def test_batch_dialog_daily_limit(monkeypatch):
         select={"selected": ["j1"], "skipped": []},
         batch_result=ApplyResult("", "failed", "今日投递已达上限（51job 每日限制）"),
     )
-    results = _run(apply_job_group(page, [_target()]))
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "failed"
     assert "上限" in results["j1"].message
 
@@ -155,7 +160,7 @@ def test_batch_captcha(monkeypatch):
     monkeypatch.setattr(applier, "solve_aliyun_captcha", _fake_solve)
     page = _Page(cards_ready=False)
     _patch_helpers(monkeypatch, body="请按住滑块")
-    results = _run(apply_job_group(page, [_target()]))
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "captcha"  # 内部信号，由 apply_to_jobs 兜底
 
 
@@ -165,25 +170,32 @@ def test_batch_captcha_manual_solve_then_success(monkeypatch):
 
     monkeypatch.setattr(applier, "wait_aliyun_manual", _fake_wait)
     page = _Page(first_wait_fails=True)
-    _patch_helpers(
-        monkeypatch,
-        body="请按住滑块",
-        select={"selected": ["j1"], "skipped": []},
-    )
-    results = _run(apply_job_group(page, [_target()], manual_wait=120.0))
+    _patch_helpers(monkeypatch, body="请按住滑块", select={"selected": ["j1"], "skipped": []})
+    results = _run(apply_job_group(page, [_target()], "020000", None, manual_wait=120.0))
     assert results["j1"].status == "success"
 
 
-def test_single_apply_to_job_delegates(monkeypatch):
+def test_apply_to_job_uses_first_source(monkeypatch):
     page = _Page()
     _patch_helpers(monkeypatch, select={"selected": ["j1"], "skipped": []})
-    result = _run(apply_to_job(page, _target()))
+    target = _target(sources=[("020000", "08,46,47"), ("000000", None)])
+    result = _run(apply_to_job(page, target))
     assert result.status == "success"
+    assert "industry=08%2C46%2C47" in page.goto_url  # 用了第一组源条件（带行业）
+
+
+def test_apply_to_job_fallback_city(monkeypatch):
+    page = _Page()
+    _patch_helpers(monkeypatch, select={"selected": ["j1"], "skipped": []})
+    result = _run(apply_to_job(page, _target(city="上海")))  # 无源条件 → 城市名兜底
+    assert result.status == "success"
+    assert "jobArea=020000" in page.goto_url
+    assert "industry" not in page.goto_url
 
 
 def test_goto_error_failed():
     page = _Page(goto_error=RuntimeError("network"))
-    results = _run(apply_job_group(page, [_target()]))
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "failed"
     assert "页面打开失败" in results["j1"].message
 
@@ -191,7 +203,7 @@ def test_goto_error_failed():
 def test_search_not_loaded(monkeypatch):
     page = _Page(cards_ready=False)
     _patch_helpers(monkeypatch, body="")
-    results = _run(apply_job_group(page, [_target()]))
+    results = _run(apply_job_group(page, [_target()], "020000", None))
     assert results["j1"].status == "failed"
     assert "搜索结果未加载" in results["j1"].message
 
@@ -201,15 +213,21 @@ def test_build_job_url_fallback():
     assert build_job_url(ApplyTarget("j9", "t", "https://x/j9.html")) == "https://x/j9.html"
 
 
-def test_build_search_url_quotes_title():
+def test_build_search_url_quotes_title_and_industry():
     url = applier.build_search_url("采购 工程师")
     assert "keyword=%E9%87%87%E8%B4%AD" in url
-    assert "pageNum=1" in url
+    assert "sortType=0" in url
     assert "jobArea=000000" in url
-    assert "jobArea=020000" in applier.build_search_url("采购", 2, "020000")
+    assert "industry" not in url
+    url2 = applier.build_search_url("采购", 2, "020000", "08,46,47")
+    assert "jobArea=020000" in url2
+    assert "industry=08%2C46%2C47" in url2
 
 
-def test_search_keyword_strips_suffix():
-    assert applier._search_keyword("项目运作实习生 （上海）") == "项目运作实习生"
-    assert applier._search_keyword("采购工程师--供应商开发") == "采购工程师"
-    assert applier._search_keyword("市场专员") == "市场专员"
+def test_first_source_prefers_source_then_city():
+    assert applier._first_source(_target(city="上海")) == ("020000", None)
+    assert applier._first_source(_target(city="北京")) == ("010000", None)
+    t = _target(city="上海", sources=[("020000", "08,46,47"), ("000000", None)])
+    assert applier._first_source(t) == ("020000", "08,46,47")
+    t2 = _target(city="上海", sources=[("000000", None)])
+    assert applier._first_source(t2) == ("000000", None)

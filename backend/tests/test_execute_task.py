@@ -2,7 +2,7 @@ import asyncio
 
 from backend.app.core.config import REPO_ROOT
 from backend.app.core.database import SessionLocal, init_db
-from backend.app.models import Company, Job, Keyword, ScrapeTask, Setting, SiteCredential, TaskStatus
+from backend.app.models import Company, Job, JobSource, Keyword, ScrapeTask, Setting, SiteCredential, TaskStatus
 from backend.app.scrapers.base import CompanyDraft, JobDraft, PageResult
 from backend.app.services import task_runner
 
@@ -143,6 +143,28 @@ def test_execute_task_passes_industry(config, monkeypatch):
         task_id = task.id
     asyncio.run(task_runner.execute_task(task_id))
     assert fake.industry_arg == "47"
+
+
+def test_execute_task_records_source_conditions(config, monkeypatch):
+    init_db(config)
+    fake = FakeScraper()
+    fake.search_results = [PageResult(page_num=1, jobs=[JobDraft(job_id="j1", title="t1")])]
+    _patch(monkeypatch, fake, config)
+    with SessionLocal() as s:
+        kw = Keyword(keyword="医疗采购", city="020000", industry="47")
+        s.add(kw)
+        s.commit()
+        task = ScrapeTask(keyword_id=kw.id, status=TaskStatus.QUEUED.value)
+        s.add(task)
+        s.commit()
+        task_id = task.id
+    asyncio.run(task_runner.execute_task(task_id))
+    with SessionLocal() as s:
+        rows = s.query(JobSource).all()
+        assert len(rows) == 1
+        assert (rows[0].source_keyword, rows[0].source_city, rows[0].source_industry) == (
+            "医疗采购", "020000", "47",
+        )
 
 
 def test_execute_task_industry_none_when_unset(config, monkeypatch):

@@ -37,6 +37,7 @@
 - **scrape_tasks**：id, keyword_id, mode, status(排队/进行中/成功/失败/部分成功), total_pages, total_found, success_count, failed_count, last_page(已抓到的最大页号), start_time, end_time, error_message, created_at
 - **jobs**（job_id 唯一，覆盖更新）：id, job_id, title, salary_raw, salary_min, salary_max, city, district, area, degree(学历), year(工作年限), tags(JSON), publish_time, source, company_id, job_url, created_at, updated_at
 - **companies**（company_id 唯一）：id, company_id, name, type(民营/国企/外企), industry, size, activity, activity_score(0-10 活跃值，-1=未知，由 activity 文案按固定规则映射，规则见 §6), created_at, updated_at
+- **job_sources**（职位被命中的源抓取条件，多对多）：id, job_id, source_keyword(源抓取关键字), source_city(源城市编码), source_industry(源行业筛选，NULL=不过滤), first_seen_at, last_seen_at —— (job_id, source_keyword, source_city, source_industry) 联合唯一；同一条件再次命中只刷新 last_seen_at，不同条件新增一行。供「一键投递」按**当初抓到该职位的搜索条件**（真实岗位标题 + 源城市/行业）精确搜索。
 - **settings**：id, key(唯一), value(JSON), updated_at —— 存全局配置（如 schedule：频率、启停、目标关键字）
 - **apply_tasks**（一键批量投简历任务）：id, credential_id(可空，凭据删除时置 NULL), credential_username(账号快照，凭据删除后仍可展示), status(排队/进行中/成功/部分成功/失败), total_count, success_count, failed_count, skipped_count, results(JSON，逐条 `[{job_id,title,job_url,status: pending/success/failed/skipped,message}]`), start_time, end_time, error_message, created_at
 
@@ -102,10 +103,11 @@
 
 ### 6.1 一键投递模块（applier）
 
-- 复用 `PlaywrightScraper` 的浏览器/登录/验证码能力：登录块抽取为 `_ensure_logged_in`（`search` 与投递共用）；新增 `apply_to_jobs(targets)` 按关键词分组批量投递，组间随机延时 5-10s。
-- **投递从搜索页发起并批量勾选**（实测详情页 jobs.51job.com 有独立阿里云滑块风控，Playwright 浏览器含真实 Chrome/有头手动拖动均被识别拒绝；搜索页 we.51job.com 风控宽松）：`apply_job_group` 按搜索关键词分组 → 每个词只搜索一次（自动翻页 ≤4 页、城市收窄）→ 按 sensorsdata jobId 定位目标卡片 → 用 JS dispatch 勾选 `.ick` → 点工具栏 `button.p_but.all_apply`「一键投递」，页面 JS 一次发送**带合法签名的 light-apply-job 请求**（`applyJobList` 含全部选中 jobId，实测一次投 3 个成功）。
+- 复用 `PlaywrightScraper` 的浏览器/登录/验证码能力：登录块抽取为 `_ensure_logged_in`（`search` 与投递共用）；新增 `apply_to_jobs(targets)` 批量投递，组间随机延时 5-10s。
+- **投递搜索条件 = 当初抓到该职位的源条件**：关键字用**真实岗位标题**，城市/行业取 `job_sources` 记录的源抓取条件（一个职位可有多组条件：带行业筛选的窄搜索优先、其次按 last_seen_at 新到旧；无源条件的老职位按职位城市名兜底）。某职位在条件 A 下投成（成功/已投递）后不再用其它条件重复投；A 未找到则继续用条件 B 尝试，全部条件用尽才报失败。
+- **投递从搜索页发起并批量勾选**（实测详情页 jobs.51job.com 有独立阿里云滑块风控，Playwright 浏览器含真实 Chrome/有头手动拖动均被识别拒绝；搜索页 we.51job.com 风控宽松）：按（标题, 源城市, 源行业）分组，每组搜索一次（自动翻页 ≤15 页——源条件下职位可能排得较深，实测曾见第 7 页；排序与抓取一致 sortType=0）→ 按 sensorsdata jobId 定位目标卡片 → 用 JS dispatch 勾选 `.ick` → 点工具栏 `button.p_but.all_apply`「一键投递」，页面 JS 一次发送**带合法签名的 light-apply-job 请求**（`applyJobList` 含全部选中 jobId，实测一次投 3 个成功）。
 - **为什么不直接调 API**：投递接口 `cupid.51job.com/open/user-apply/.../light-apply-job` 每个请求带 `sign` 签名头，由页面内阿里云接口保护 SDK 计算，Python 端无法复刻（实测 fetch/XHR 直投均返回「鉴权失败，签名错误」），故必须通过页面 UI 让页面代签。
-- 已投递卡片自动跳过；弹窗序列（简历不完整提示/「选择需要投递的简历」+「立即申请」/附件「发送」/「投递成功」）best-effort 处理，未知弹窗把文案写入失败原因。
+- 已投递卡片自动跳过；弹窗序列（简历不完整提示/「选择需要投递的简历」+「立即申请」/附件「发送」/「投递成功」/每日投递上限提示）best-effort 处理，未知弹窗把文案写入失败原因。
 - 搜索页遇滑块验证码：冷却 90s 重试 + 有头模式人工拖动兜底（`manual_wait`）。
 - **投递必须登录**：登录失败判任务失败（不降级匿名）；凭据解密失败/缺失同样判失败。
 - 投递任务后台串行执行（`ApplyRunner` 线程），进程重启时 in_progress 置失败；选择器/文案随 51job 站点改版集中在 `applier.py` 维护。
