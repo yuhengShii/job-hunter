@@ -6,9 +6,10 @@
         placeholder="全部关键字"
         clearable
         :style="selStyle('240px')"
-        @change="reload"
+        :loading="loading"
+        @change="onKeywordChange"
       >
-        <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="kw.keyword" :value="kw.id" />
+        <el-option v-for="kw in keywordsStore.list" :key="kw.id" :label="keywordLabel(kw)" :value="kw.id" />
       </el-select>
       <el-select v-model="groupBy" :style="selStyle('140px', true)" @change="reload">
         <el-option label="全部" value="all" />
@@ -113,10 +114,12 @@ import { computed, onMounted, ref, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
 import { statsApi, type CompanyStats, type SalaryStats, type DistributionResult, type TrendResult } from '@/api/stats'
+import { type KeywordOut } from '@/api/keywords'
 import { useKeywordsStore } from '@/stores/keywords'
 import { useChart } from '@/composables/useChart'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { trendDisplay } from '@/utils/trend'
+import { cityName } from '@/utils/cities'
 
 const router = useRouter()
 const isMobile = useIsMobile()
@@ -129,6 +132,13 @@ function selStyle(desktopPx: string, withGap = false) {
 const keywordsStore = useKeywordsStore()
 const keywordId = ref<number | null>(null)
 const groupBy = ref<'all' | 'city' | 'district' | 'area'>('all')
+const loading = ref(false)
+
+function keywordLabel(kw: KeywordOut): string {
+  // 同 keyword 不同城市可共存（PRD §4 联合唯一），选项带城市名便于区分
+  const name = cityName(kw.city)
+  return name && name !== '全国' ? `${kw.keyword}（${name}）` : kw.keyword
+}
 
 const overview = ref({ total_jobs: 0, total_cities: 0, total_companies: 0, salary_parsed: 0 })
 const salary = ref<SalaryStats | null>(null)
@@ -339,24 +349,38 @@ let statsSeq = 0
 
 async function reload() {
   const seq = ++statsSeq
-  const kw = keywordId.value
-  const gb = groupBy.value === 'all' ? 'city' : groupBy.value
-  const trendGb = groupBy.value === 'all' ? undefined : groupBy.value
-  const [ov, sa, co, tr, ta, di] = await Promise.all([
-    statsApi.overview(kw),
-    statsApi.salary(kw, gb),
-    statsApi.company(kw),
-    statsApi.trend(kw, 30, trendGb),
-    statsApi.tags(kw, 10),
-    statsApi.distribution(kw, gb),
-  ])
-  if (seq !== statsSeq) return
-  overview.value = ov
-  salary.value = sa
-  company.value = co
-  trend.value = tr
-  tags.value = ta
-  dist.value = di
+  loading.value = true
+  try {
+    const kw = keywordId.value
+    const gb = groupBy.value === 'all' ? 'city' : groupBy.value
+    const trendGb = groupBy.value === 'all' ? undefined : groupBy.value
+    const [ov, sa, co, tr, ta, di] = await Promise.all([
+      statsApi.overview(kw),
+      statsApi.salary(kw, gb),
+      statsApi.company(kw),
+      statsApi.trend(kw, 30, trendGb),
+      statsApi.tags(kw, 10),
+      statsApi.distribution(kw, gb),
+    ])
+    if (seq !== statsSeq) return
+    overview.value = ov
+    salary.value = sa
+    company.value = co
+    trend.value = tr
+    tags.value = ta
+    dist.value = di
+  } catch {
+    // 拦截器已提示；保留旧数据，避免切换关键字时图表闪空
+  } finally {
+    if (seq === statsSeq) loading.value = false
+  }
+}
+
+function onKeywordChange() {
+  // 切换关键字后重置行业图例的展开/隐藏状态，避免残留上一个关键字的图例
+  hiddenIndustries.value = new Set()
+  industryExpanded.value = false
+  reload()
 }
 
 onMounted(async () => {

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from backend.app.api.deps import ensure_admin
 from backend.app.core.database import SessionLocal, init_db
 from backend.app.main import create_app
-from backend.app.models import Company, Job, Keyword, ScrapeTask, TaskStatus
+from backend.app.models import Company, Job, JobSource, Keyword, ScrapeTask, TaskStatus
 from backend.app.services.stats import (
     get_window_start,
     overview,
@@ -269,3 +269,50 @@ def test_trend_api_group_by(config):
         data2 = resp2.json()
         assert data2["group_by"] == "city"
         assert {s["key"] for s in data2["series"]} == {"上海", "北京"}
+
+
+def test_keyword_stats_exclude_other_keyword_jobs(config):
+    """H1 回归：带 keyword_id 的统计只能包含该 keyword 任务命中的职位。
+
+    构造：kw1 任务在 T1 完成、kw2 任务在 T2（T2 > T1）完成，kw2 的职位
+    updated_at 在 T2，落在 kw1 的窗口（>= T1）内。修复前 overview(kw1)
+    会混入 kw2 的职位，修复后按 job_sources 归属过滤，只统计 kw1 的职位。
+    """
+    init_db(config)
+    with SessionLocal() as s:
+        ensure_admin(s, config)
+        kw1 = Keyword(keyword="python")
+        kw2 = Keyword(keyword="java")
+        s.add_all([kw1, kw2])
+        s.commit()
+        t1 = datetime(2026, 7, 1, 10, 0, 0)
+        t2 = datetime(2026, 7, 5, 10, 0, 0)
+        s.add_all([
+            ScrapeTask(keyword_id=kw1.id, status=TaskStatus.SUCCESS.value, start_time=t1, end_time=t1 + timedelta(minutes=5)),
+            ScrapeTask(keyword_id=kw2.id, status=TaskStatus.SUCCESS.value, start_time=t2, end_time=t2 + timedelta(minutes=5)),
+            Job(job_id="k1", title="python职位", city="上海", salary_min=10000, salary_max=20000, updated_at=t1 + timedelta(hours=1)),
+            Job(job_id="k2", title="java职位", city="北京", salary_min=20000, salary_max=30000, updated_at=t2 + timedelta(hours=1)),
+            JobSource(job_id="k1", source_keyword="python", source_city="000000", last_seen_at=t1 + timedelta(hours=1)),
+            JobSource(job_id="k2", source_keyword="java", source_city="000000", last_seen_at=t2 + timedelta(hours=1)),
+        ])
+        s.commit()
+    with SessionLocal() as s:
+        window1 = get_window_start(s, kw1.id)
+        assert window1 == t1
+        # 修复前：kw2 的职位 updated_at（t2+1h）>= t1，会混入 kw1 的统计
+        stat = overview(s, window1, kw1.id)
+        assert stat["total_jobs"] == 1
+        assert stat["total_cities"] == 1
+        stat2 = overview(s, get_window_start(s, kw2.id), kw2.id)
+        assert stat2["total_jobs"] == 1
+        assert stat2["total_cities"] == 1
+        # 不带 keyword_id 保持原口径：全局窗口 = 最近任务 start_time（t2），只含 kw2 职位
+        assert overview(s, get_window_start(s))["total_jobs"] == 1
+        # salary/tags/trend 同样按 keyword 归属过滤
+        sal = salary_stats(s, window1, group_by="city", keyword_id=kw1.id)
+        assert [i["key"] for i in sal["items"]] == ["上海"]
+        tags = tag_stats(s, window1, keyword_id=kw1.id)
+        assert tags == []
+        trend = trend_stats(s, window1, keyword_id=kw1.id)
+        assert trend["group_by"] is None
+        assert sum(d["count"] for d in trend["days"]) == 1
